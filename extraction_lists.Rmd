@@ -1,0 +1,879 @@
+---
+title: "Extraction Lists AY 2019"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+
+## Setup
+
+Load all necessary packages.
+```{r setup, message=FALSE, results='hide'}
+library(tidyverse)
+library(lubridate)
+library(scales)
+
+source("~/../R/Functions.GCL.R")
+```
+
+# Winter Troll
+
+## ASL Data
+
+### Read raw ASL
+```{r}
+(asl_winter <- read_csv(file = "../ASL Data/20190813_Harvest - Detailed ASL Samples.csv"))
+```
+
+### Manipulate ASL
+```{r}
+(asl_winter <- asl_winter %>% 
+   mutate(Year_f = factor(Year)) %>% 
+   rename(Quadrant = District) %>% 
+   mutate(Fishery = case_when(Harvest == "Spring Troll Fishery" ~ "Spring",
+                              Harvest == "Traditional State Managed Fisheries" & `Stat Week` <= 18 ~ "Late Winter",
+                              Harvest == "Traditional State Managed Fisheries" & `Stat Week` >= 41 ~ "Early Winter",
+                              Harvest == "Traditional State Managed Fisheries" & `Stat Week` >= 26 & `Stat Week` <= 31 ~ "Summer Ret 1",
+                              Harvest == "Traditional State Managed Fisheries" & `Stat Week` >= 32 & `Stat Week` <= 36 ~ "Summer Ret 2")) %>% 
+   mutate(Fishery = factor(Fishery, levels = c("Late Winter", "Spring", "Summer Ret 1", "Summer Ret 2", "Early Winter")))
+)
+```
+
+### Visualize ASL
+```{r}
+asl_winter %>% 
+  filter(!is.na(`Dna Specimen No`)) %>% 
+  count(Year, Fishery, Quadrant) %>% 
+  filter(Year == 2018 & Fishery == "Early Winter" | Year == "2019" & Fishery == "Late Winter") %>% 
+  spread(Quadrant, n)
+```
+
+
+## Harvest Data
+
+### Read Fish Ticket Data
+```{r}
+(harvest_winter <- read_csv(file = "../Harvest Data/20190813_ft - Detailed Fish Tickets.csv"))
+```
+
+### Manipulate Harvest
+```{r}
+(harvest_winter <- harvest_winter %>% 
+   mutate(Quadrant = case_when(District %in% c(113, 114, 116, 154, 156, 157) | District >= 181 ~ 171,
+                               District %in% c(103, 104, 152) ~ 172,
+                               District %in% c(109, 110, 111, 112, 115) ~ 173,
+                               District %in% c(101, 102, 105, 106, 107, 108) ~ 174)) %>% 
+   mutate(Year_f = factor(Year)) %>% 
+   mutate(Fishery = case_when(`Harvest Code` == 13 ~ "Spring",
+                              `Harvest Code` == 11 & `Stat Week` <= 18 ~ "Late Winter",
+                              `Harvest Code` == 11 & `Stat Week` >= 41 ~ "Early Winter",
+                              `Harvest Code` == 11 & `Stat Week` >= 26 & `Stat Week` <= 31 ~ "Summer Ret 1",
+                              `Harvest Code` == 11 & `Stat Week` >= 32 & `Stat Week` <= 36 ~ "Summer Ret 2")) %>% 
+   mutate(Fishery = factor(Fishery, levels = c("Late Winter", "Spring", "Summer Ret 1", "Summer Ret 2", "Early Winter")))
+)
+```
+
+### Visualize Harvest
+```{r}
+harvest_winter %>% 
+  group_by(Year, Fishery, Quadrant) %>% 
+  summarise(harvest = sum(`Number Of Animals (sum)`, na.rm = TRUE)) %>% 
+  filter(Year == 2018 & Fishery == "Early Winter" | Year == "2019" & Fishery == "Late Winter") %>% 
+  spread(Quadrant, harvest)
+```
+
+## Join ASL and Harvest
+```{r}
+harvest_sw_quadrant <- harvest_winter %>% 
+  filter(Year == 2018 & Fishery == "Early Winter" | Year == "2019" & Fishery == "Late Winter") %>% 
+  group_by(Year, Fishery, `Stat Week`, `Harvest Code`, Quadrant) %>% 
+  summarise(Harvest = sum(`Number Of Animals (sum)`)) 
+
+(join_winter <- asl_winter %>% 
+    filter(!is.na(`Dna Specimen No`)) %>% 
+    filter(Year == 2018 & Fishery == "Early Winter" | Year == "2019" & Fishery == "Late Winter") %>% 
+    count(Year, Fishery, `Stat Week`, Quadrant) %>% 
+    full_join(harvest_sw_quadrant, by = c("Year", "Fishery", "Stat Week", "Quadrant")) %>% 
+    replace_na(list(n = 0, Harvest = 0)) %>% 
+    select(Year, Fishery, `Stat Week`, Quadrant, n , Harvest)
+)
+
+join_winter %>% 
+  filter(n > Harvest)
+```
+
+### Plot ASL samples and harvest as proportions by fishery
+```{r}
+join_winter %>% 
+  group_by(Fishery, Quadrant) %>% 
+  mutate(n = n / sum(n), harvest = Harvest / sum(Harvest)) %>% 
+  ungroup() %>% 
+  gather(variable, proportion, -`Stat Week`, -`Quadrant`, - Harvest, - Fishery, - Year) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = pretty_breaks()) +
+  facet_grid(`Quadrant` ~ variable, scales = "fixed") +
+  ggtitle("Proportion of Samples and Harvest\nby Stat Week and Quadrant for Winter Troll AY19") +
+  theme_bw()
+```
+
+## Early Winter Selection
+```{r}
+join_winter %>% 
+  group_by(Year, Fishery, Quadrant) %>% 
+  mutate(n = n / sum(n), Harvest = Harvest / sum(Harvest)) %>% 
+  ungroup() %>% 
+  gather(variable, proportion, -Year, -`Stat Week`, -Fishery, -Quadrant) %>% 
+  filter(Fishery == "Early Winter") %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = pretty_breaks()) +
+  facet_grid(Quadrant ~ variable, scales = "fixed") +
+  ggtitle("Samples and Harvest by Stat Week and Quadrant for Early Winter AY19") +
+  theme_bw()
+```
+
+Thus the plan for extraction is to pick as many fish as possible, with the important caveat of subsampling in proportion to harvest by SW for each quadrant.
+
+**Business rule** is to take fish from within 2 SW on either side to fill in for missing
+
+### 171
+
+Plan is to subsample as many fish as possible. What would proportional sampling look like?
+```{r}
+(extraction_EW_171 <- join_winter %>% 
+   filter(Fishery == "Early Winter" & Year == "2018" & Quadrant == 171) %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * 120)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Adjust *n_extract* to fill in holes from some weeks according to our business rule of +/- 2 weeks.
+```{r}
+(extraction_EW_171 <- extraction_EW_171 %>% 
+   mutate(n_extract = case_when(`Stat Week` == 42 ~ 8,
+                                `Stat Week` == 43 ~ 4,
+                                `Stat Week` == 46 ~ 15,
+                                `Stat Week` == 49 ~ 16,
+                                `Stat Week` == 50 ~ 3,
+                                TRUE ~ n_extract)) %>%
+   select(Quadrant, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_winter %>% 
+  filter(Fishery == "Early Winter" & Year == "2018" & Quadrant == 171) %>% 
+  full_join(extraction_EW_171, by = c("Quadrant", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -Year, -`Stat Week`, -Fishery, -Quadrant) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(Quadrant ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Quadrant for Early Winter AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+EW_171_torun <- asl_winter %>% 
+  filter(Year == 2018, Fishery == "Early Winter" & Quadrant == 171) %>% 
+  nest(-`Stat Week`) %>% 
+  right_join(extraction_EW_171, by = "Stat Week") %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample)
+```
+
+Verify picked fish
+```{r}
+EW_171_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 172
+
+Plan is to subsample as many fish as possible. What would proportional sampling look like?
+```{r}
+(extraction_EW_172 <- join_winter %>% 
+   filter(Fishery == "Early Winter" & Year == "2018" & Quadrant == 172) %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * 11)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Adjust *n_extract* to fill in holes from some weeks according to our business rule of +/- 2 weeks. Run all fish!
+```{r}
+(extraction_EW_172 <- extraction_EW_172 %>% 
+   mutate(n_extract = n) %>%
+   select(Quadrant, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_winter %>% 
+  filter(Fishery == "Early Winter" & Year == "2018" & Quadrant == 172) %>% 
+  full_join(extraction_EW_172, by = c("Quadrant", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -Year, -`Stat Week`, -Fishery, -Quadrant) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(Quadrant ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Quadrant for Early Winter AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+EW_172_torun <- asl_winter %>% 
+  filter(Year == 2018, Fishery == "Early Winter" & Quadrant == 172) %>% 
+  nest(-`Stat Week`) %>% 
+  right_join(extraction_EW_172, by = "Stat Week") %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample)
+```
+
+Verify picked fish
+```{r}
+EW_172_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 173
+
+Plan is to subsample as many fish as possible. What would proportional sampling look like?
+```{r}
+(extraction_EW_173 <- join_winter %>% 
+   filter(Fishery == "Early Winter" & Year == "2018" & Quadrant == 173) %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * 110)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Adjust *n_extract* to fill in holes from some weeks according to our business rule of +/- 2 weeks.
+```{r}
+(extraction_EW_173 <- extraction_EW_173 %>% 
+   mutate(n_extract = case_when(`Stat Week` == 42 ~ 32,
+                                `Stat Week` == 43 ~ 21,
+                                `Stat Week` == 46 ~ 17,
+                                `Stat Week` == 47 ~ 9,
+                                `Stat Week` == 49 ~ 9,
+                                TRUE ~ n_extract)) %>%
+   select(Quadrant, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_winter %>% 
+  filter(Fishery == "Early Winter" & Year == "2018" & Quadrant == 173) %>% 
+  full_join(extraction_EW_173, by = c("Quadrant", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -Year, -`Stat Week`, -Fishery, -Quadrant) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(Quadrant ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Quadrant for Early Winter AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+EW_173_torun <- asl_winter %>% 
+  filter(Year == 2018, Fishery == "Early Winter" & Quadrant == 173) %>% 
+  nest(-`Stat Week`) %>% 
+  right_join(extraction_EW_173, by = "Stat Week") %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample)
+```
+
+Verify picked fish
+```{r}
+EW_173_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 174
+
+Plan is to subsample as many fish as possible. What would proportional sampling look like?
+```{r}
+(extraction_EW_174 <- join_winter %>% 
+   filter(Fishery == "Early Winter" & Year == "2018" & Quadrant == 174) %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * 100)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Adjust *n_extract* to fill in holes from some weeks according to our business rule of +/- 2 weeks.
+```{r}
+(extraction_EW_174 <- extraction_EW_174 %>% 
+   mutate(n_extract = case_when(`Stat Week` == 42 ~ 36,
+                                `Stat Week` == 43 ~ 18,
+                                `Stat Week` == 48 ~ 7,
+                                `Stat Week` == 49 ~ 13,
+                                `Stat Week` == 50 ~ 2,
+                                TRUE ~ n_extract)) %>%
+   select(Quadrant, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_winter %>% 
+  filter(Fishery == "Early Winter" & Year == "2018" & Quadrant == 174) %>% 
+  full_join(extraction_EW_174, by = c("Quadrant", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -Year, -`Stat Week`, -Fishery, -Quadrant) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(Quadrant ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Quadrant for Early Winter AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+EW_174_torun <- asl_winter %>% 
+  filter(Year == 2018, Fishery == "Early Winter" & Quadrant == 174) %>% 
+  nest(-`Stat Week`) %>% 
+  right_join(extraction_EW_174, by = "Stat Week") %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample)
+```
+
+Verify picked fish
+```{r}
+EW_174_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### Early Winter Extraction
+
+Combine in to a single tibble.
+```{r}
+EW_torun_asl <- bind_rows(EW_171_torun, EW_172_torun, EW_173_torun, EW_174_torun)
+EW_torun_asl %>% 
+  count(Quadrant)
+
+save_objects("EW_torun_asl", path = "../Objects")
+```
+
+Plot proportions
+```{r}
+join_winter %>% 
+  filter(Fishery == "Early Winter" & Year == "2018") %>% 
+  full_join(EW_torun_asl %>% count(Quadrant, `Stat Week`), by = c("Quadrant", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  replace_na(list(n_sample = 0, n_extract = 0, Harvest = 0)) %>%  # replace NA in samples and harvest with 0
+  group_by(Quadrant) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -Year, -`Stat Week`, -Fishery, -Quadrant) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(Quadrant ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Quadrant for Early Winter AY19") +
+  theme_bw()
+```
+
+
+## Late Winter Selection
+```{r}
+join_winter %>% 
+  group_by(Year, Fishery, Quadrant) %>% 
+  mutate(n = n / sum(n), Harvest = Harvest / sum(Harvest)) %>% 
+  ungroup() %>% 
+  gather(variable, proportion, -Year, -`Stat Week`, -Fishery, -Quadrant) %>% 
+  filter(Fishery == "Late Winter") %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = pretty_breaks()) +
+  facet_grid(Quadrant ~ variable, scales = "fixed") +
+  ggtitle("Samples and Harvest by Stat Week and Quadrant for Late Winter AY19") +
+  theme_bw()
+```
+
+Thus the plan for extraction is to pick ~380 for 171 (NO), ~190 for 173 (NI) and 174 (SI) and run everything for 172 (SO), with the important caveat of subsampling in proportion to harvest by SW for each quadrant.
+
+**Business rule** is to take fish from within 2 SW on either side to fill in for missing
+
+### 171
+
+Plan is to subsample ~380 fish. What would proportional sampling look like?
+```{r}
+(extraction_LW_171 <- join_winter %>% 
+   filter(Fishery == "Late Winter" & Year == "2019" & Quadrant == 171) %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * 380)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+No need to adjust, looks perfect!
+```{r}
+(extraction_LW_171 <- extraction_LW_171 %>% 
+   mutate(n_extract = n_extract) %>%
+   select(Quadrant, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_winter %>% 
+  filter(Fishery == "Late Winter" & Year == "2019" & Quadrant == 171) %>% 
+  full_join(extraction_LW_171, by = c("Quadrant", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -Year, -`Stat Week`, -Fishery, -Quadrant) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(Quadrant ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Quadrant for Late Winter AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+LW_171_torun <- asl_winter %>% 
+  filter(Year == 2019, Fishery == "Late Winter" & Quadrant == 171) %>% 
+  nest(-`Stat Week`) %>% 
+  right_join(extraction_LW_171, by = "Stat Week") %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample)
+```
+
+Verify picked fish
+```{r}
+LW_171_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 172
+
+Plan is to subsample as many fish as possible. What would proportional sampling look like?
+```{r}
+(extraction_LW_172 <- join_winter %>% 
+   filter(Fishery == "Late Winter" & Year == "2019" & Quadrant == 172) %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * 55)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Adjust *n_extract* to fill in holes from some weeks according to our business rule of +/- 2 weeks. Run all fish!
+```{r}
+(extraction_LW_172 <- extraction_LW_172 %>% 
+   mutate(n_extract = case_when(`Stat Week` == 3 ~ 10,
+                                `Stat Week` == 6 ~ 5,
+                                `Stat Week` == 7 ~ 5,
+                                `Stat Week` == 10 ~ 10,
+                                TRUE ~ n_extract)) %>%
+   select(Quadrant, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_winter %>% 
+  filter(Fishery == "Late Winter" & Year == "2019" & Quadrant == 172) %>% 
+  full_join(extraction_LW_172, by = c("Quadrant", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -Year, -`Stat Week`, -Fishery, -Quadrant) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(Quadrant ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Quadrant for Late Winter AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+LW_172_torun <- asl_winter %>% 
+  filter(Year == 2019, Fishery == "Late Winter" & Quadrant == 172) %>% 
+  nest(-`Stat Week`) %>% 
+  right_join(extraction_LW_172, by = "Stat Week") %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample)
+```
+
+Verify picked fish
+```{r}
+LW_172_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 173
+
+Plan is to subsample 120 fish. What would proportional sampling look like?
+```{r}
+(extraction_LW_173 <- join_winter %>% 
+   filter(Fishery == "Late Winter" & Year == "2019" & Quadrant == 173) %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * 120)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Adjust *n_extract* to fill in holes from some weeks according to our business rule of +/- 2 weeks.
+```{r}
+(extraction_LW_173 <- extraction_LW_173 %>% 
+   mutate(n_extract = case_when(`Stat Week` == 2 ~ 5,
+                                `Stat Week` == 5 ~ 13,
+                                `Stat Week` == 6 ~ 6,
+                                `Stat Week` == 9 ~ 13,
+                                `Stat Week` == 49 ~ 9,
+                                TRUE ~ n_extract)) %>%
+   select(Quadrant, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_winter %>% 
+  filter(Fishery == "Late Winter" & Year == "2019" & Quadrant == 173) %>% 
+  full_join(extraction_LW_173, by = c("Quadrant", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -Year, -`Stat Week`, -Fishery, -Quadrant) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(Quadrant ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Quadrant for Late Winter AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+LW_173_torun <- asl_winter %>% 
+  filter(Year == 2019, Fishery == "Late Winter" & Quadrant == 173) %>% 
+  nest(-`Stat Week`) %>% 
+  right_join(extraction_LW_173, by = "Stat Week") %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample)
+```
+
+Verify picked fish
+```{r}
+LW_173_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 174
+
+Plan is to subsample as many fish as possible. What would proportional sampling look like?
+```{r}
+(extraction_LW_174 <- join_winter %>% 
+   filter(Fishery == "Late Winter" & Year == "2019" & Quadrant == 174) %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * 170)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Adjust *n_extract* to fill in holes from some weeks according to our business rule of +/- 2 weeks.
+```{r}
+(extraction_LW_174 <- extraction_LW_174 %>% 
+   mutate(n_extract = case_when(`Stat Week` == 5 ~ 47,
+                                `Stat Week` == 7 ~ 19,
+                                `Stat Week` == 9 ~ 19,
+                                TRUE ~ n_extract)) %>%
+   select(Quadrant, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_winter %>% 
+  filter(Fishery == "Late Winter" & Year == "2019" & Quadrant == 174) %>% 
+  full_join(extraction_LW_174, by = c("Quadrant", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -Year, -`Stat Week`, -Fishery, -Quadrant) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(Quadrant ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Quadrant for Late Winter AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+LW_174_torun <- asl_winter %>% 
+  filter(Year == 2019, Fishery == "Late Winter" & Quadrant == 174) %>% 
+  nest(-`Stat Week`) %>% 
+  right_join(extraction_LW_174, by = "Stat Week") %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample)
+```
+
+Verify picked fish
+```{r}
+LW_174_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### Late Winter Extraction
+
+Combine in to a single tibble.
+```{r}
+LW_torun_asl <- bind_rows(LW_171_torun, LW_172_torun, LW_173_torun, LW_174_torun)
+LW_torun_asl %>% 
+  count(Quadrant)
+
+save_objects("LW_torun_asl", path = "../Objects")
+```
+
+Plot proportions
+```{r}
+join_winter %>% 
+  filter(Fishery == "Late Winter" & Year == "2019") %>% 
+  full_join(LW_torun_asl %>% count(Quadrant, `Stat Week`), by = c("Quadrant", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  replace_na(list(n_sample = 0, n_extract = 0, Harvest = 0)) %>%  # replace NA in samples and harvest with 0
+  group_by(Quadrant) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -Year, -`Stat Week`, -Fishery, -Quadrant) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(Quadrant ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Quadrant for Late Winter AY19") +
+  theme_bw()
+```
+
+## Write Winter Extraction List
+
+Combine Early and Late Winter into one list and confirm that all `Dna Specimen No` are 6 characters before splitting
+```{r}
+winter_torun_asl <- bind_rows(EW_torun_asl, LW_torun_asl)
+
+table(nchar(winter_torun_asl$`Dna Specimen No`))
+```
+
+### Compare with *LOKI*
+Excellent! Next we'll pull tissue collection info from OceanAK and join, need full 10 digit WGC number and Sample number
+```{r}
+(loki_tissue_winter <- read_csv(file = "../OceanAK/GEN_SAMPLED_FISH_TISSUE_KTROL18EW_KTROL19LW.csv") %>% 
+   filter(is.na(IS_MISSING_PAIRED_DATA_EXISTS)) %>%  # make sure we aren't issing the tissue
+   select(`Silly Code`, FK_FISH_ID, DNA_TRAY_CODE, DNA_TRAY_WELL_CODE, PK_TISSUE_TYPE) %>% 
+   mutate(WGC_4digit = str_sub(DNA_TRAY_CODE, 7, 10)) %>% 
+   mutate(WGC_2digit_pos = str_pad(string = DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = 0)) %>% 
+   unite(dna_specimen_no, c(WGC_4digit, WGC_2digit_pos), sep = '', remove = FALSE) %>% 
+   mutate(dna_specimen_no = as.integer(dna_specimen_no))
+)
+```
+
+Are all my extraction fish in the LOKI tissue table?
+```{r}
+table(winter_torun_asl$`Dna Specimen No` %in% loki_tissue_winter$dna_specimen_no)
+```
+
+### Resolve Discrepancies
+Looks like we are missing 5 fish..., but which ones???
+```{r}
+missing_fish <- sort(setdiff(winter_torun_asl$`Dna Specimen No`, loki_tissue_winter$dna_specimen_no))
+
+winter_torun_asl %>% 
+  filter(`Dna Specimen No` %in% missing_fish) %>% 
+  select(Fishery, Quadrant, `Stat Week`, `Dna Specimen No`)
+```
+
+Do these two Whatman cards exist in LOKI?
+```{r}
+sum(grepl(pattern = 6474, x = loki_tissue_winter$DNA_TRAY_CODE))
+sum(grepl(pattern = 4687, x = loki_tissue_winter$DNA_TRAY_CODE))
+```
+
+The first card does NOT exist in LOKI...
+
+Perhaps there was a typo in the Whatman Card number, what barcodes do we have?
+```{r}
+loki_tissue_winter %>% 
+  count(DNA_TRAY_CODE)
+```
+
+After Checking Iris' shipment summary sheet, I think that fish from Card 1000006474 are actually 1000004674...I will go double checked this by pulling the physical Whatman Card. 
+```{r}
+read_csv(file = "../OceanAK/GEN_SAMPLED_FISH_TISSUE_KTROL18EW_KTROL19LW.csv") %>% 
+  filter(DNA_TRAY_CODE == "1000004674") %>% 
+  select(DNA_TRAY_CODE, STORAGE_ID, UNIT, SHELF_RACK, SLOT)
+```
+
+After checking the physical Whatman card, I was correct, these fish are from 1000004674. I'll modify those `Dna Specimen No` now.
+```{r}
+winter_torun_asl_mod <- winter_torun_asl %>% 
+  mutate(`Dna Specimen No` = as.numeric(str_replace(string = as.character(`Dna Specimen No`), pattern = "6474", replacement = "4674")))
+```
+
+As for fish 468702, it looks like we only have 1 in LOKI, how many did we want to extract?
+```{r}
+winter_torun_asl[grep(pattern = 4687, x = winter_torun_asl$`Dna Specimen No`), ]
+```
+
+Whoops, well it looks like we wanted all 2 fish from that Whatman card, but we only have one. Can we replace that missing fish with another from that stat week?
+```{r}
+join_winter %>% 
+  filter(Fishery == "Late Winter" & Year == "2019" & Quadrant == 172) %>% 
+  left_join(extraction_LW_172, by = c("Stat Week", "Quadrant"), suffix = c("_sample", "_extraction")) %>% 
+  arrange(`Stat Week`)
+```
+
+Nope, looks like we are SOL, we are using all fish from SW 11 and the two prior weeks. We'll just have to drop this fish.
+```{r}
+winter_torun_asl_mod <- winter_torun_asl_mod %>% 
+  filter(`Dna Specimen No` != 468702)
+```
+
+Now is everything in LOKI?
+```{r}
+table(winter_torun_asl_mod$`Dna Specimen No` %in% loki_tissue_winter$dna_specimen_no)
+```
+
+### Duplicates
+Any duplicates?
+```{r}
+table(table(loki_tissue_winter$dna_specimen_no))
+table(table(winter_torun_asl_mod$`Dna Specimen No`))
+```
+
+Shit, looks like two fish selected for extraction have the same Dna Specimen No, which are they?
+```{r}
+winter_torun_asl_mod %>% 
+  count(`Dna Specimen No`) %>% 
+  filter(n > 1)
+```
+
+Where are they from?
+```{r}
+winter_torun_asl_mod %>% 
+  filter(`Dna Specimen No` == 445601)
+```
+
+Any more fish on these cards?
+```{r}
+winter_torun_asl_mod[grep(pattern = 4456, x = winter_torun_asl_mod$`Dna Specimen No`), ]
+```
+
+After reviewing Iris' sample summary sheets, 445601 is the Early Winter fish from 171, Juneau, SW 47. The Late Winter fish from 171, Juneau, SW10 should be 645601.
+
+```{r}
+(winter_torun_asl_mod <- winter_torun_asl_mod %>% 
+   mutate(`Dna Specimen No` = case_when(`Stat Week` == 10 & `Dna Specimen No` == 445602 ~ 645602,
+                                        `Stat Week` == 10 & `Dna Specimen No` == 445601 ~ 645601,
+                                        TRUE ~ `Dna Specimen No`))
+)
+```
+
+Any duplicates now?
+```{r}
+table(table(winter_torun_asl_mod$`Dna Specimen No`))
+```
+
+And everything still in LOKI?
+```{r}
+all(winter_torun_asl_mod$`Dna Specimen No` %in% loki_tissue_winter$dna_specimen_no)
+```
+
+Excellent, all present and accounted for. Verify that we have the correct numbers of fish per fishery/quadrant
+```{r}
+winter_torun_asl_mod %>% 
+  count(Fishery, Quadrant) %>% 
+  spread(Quadrant, n, fill = 0)
+```
+
+### Format
+
+Join LOKI Tissue Table with ASL and format for Extraction List Template
+```{r}
+(winter_torun_extraction <- winter_torun_asl_mod %>% 
+   left_join(loki_tissue_winter, by = c(`Dna Specimen No` = "dna_specimen_no")) %>% 
+   mutate(`WELL CODE` = str_pad(DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = 0)) %>% 
+   mutate(`TISSUE TYPE` = str_replace(PK_TISSUE_TYPE, pattern = " Process", replacement = "")) %>% 
+   mutate(`TISSUE TYPE` = str_replace(`TISSUE TYPE`, pattern = " Clip", replacement = "")) %>% 
+   rename(SILLY = `Silly Code`, `SAMPLE #` = FK_FISH_ID, `WGC BARCODE` = `DNA_TRAY_CODE`) %>% 
+   select(SILLY, `SAMPLE #`, `WGC BARCODE`, `WELL CODE`, `TISSUE TYPE`) %>% 
+   arrange(SILLY, `WGC BARCODE`, `WELL CODE`)
+)
+```
+
+### Write
+```{r}
+write_csv(winter_torun_extraction, path = "../Extraction Lists/Winter_Extraction.csv")
+
+winter_torun_extraction %>% 
+  count(SILLY, `TISSUE TYPE`)
+```
+
+
+
