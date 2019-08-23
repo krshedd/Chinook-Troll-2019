@@ -875,5 +875,778 @@ winter_torun_extraction %>%
   count(SILLY, `TISSUE TYPE`)
 ```
 
+# TBR + Extra Gillnet
 
+We normally run TBR samples which include all large Chinook (>660mm MEF) from District 108 + 111 between statistical weeks 17-29. In addition, this year we will be analyzing D115 SW 25-29 (looking for Chilkat + Taku) and D101 (Tree Point) SW 25-29. These will all be extracted and genotyped with Winter Troll.
+
+## Sport TBR
+
+### ASL Data
+```{r}
+(asl_sport_tbr <- read_csv("../Associated Data/Sport TBR/_2019_SEAK_SF_Whatman_AWL_31JUL19.csv"))
+```
+
+```{r}
+(asl_sport_tbr <- asl_sport_tbr %>% 
+   filter(DISTRICT %in% c(108, 111)) %>% 
+   filter(STATWEEK >= 17 & STATWEEK <= 29) %>% 
+   filter(LENGTH >= 660) %>% 
+   filter(!is.na(Whatman_Card))
+)
+```
+
+```{r}
+asl_sport_tbr %>% 
+  count(DISTRICT, STATWEEK) %>% 
+  spread(DISTRICT, n, fill = 0)
+```
+
+### Sport TBR Selection
+
+#### 108
+
+Plan is to run all 108 fish since we only have 32.
+```{r}
+sport_tbr_108_torun <- asl_sport_tbr %>% 
+  filter(DISTRICT == 108)
+```
+
+#### 111
+Plan is to subsample as many fish as possible. What would proportional sampling look like?
+```{r}
+(extraction_sport_tbr_111 <- asl_sport_tbr %>% 
+   count(DISTRICT, STATWEEK) %>% 
+   filter(DISTRICT == 111) %>% 
+   arrange(STATWEEK) %>% 
+   mutate(p = round(n / sum(n) * 200)) %>% 
+   mutate(total = sum(p))
+)
+```
+
+Randomly pick fish per week
+```{r}
+sport_tbr_111_torun <- asl_sport_tbr %>% 
+  filter(DISTRICT == 111) %>% 
+  nest(-STATWEEK) %>% 
+  right_join(extraction_sport_tbr_111, by = "STATWEEK") %>% 
+  mutate(Sample = map2(data, p, sample_n)) %>% 
+  unnest(Sample)
+```
+
+Verify picked fish
+```{r}
+sport_tbr_111_torun %>% 
+  count(STATWEEK) %>% 
+  mutate(total = sum(n))
+```
+
+## Write Sport TBR Extraction List
+
+Combine 108 and 111 into one list
+```{r}
+(sport_tbr_torun_asl <- bind_rows(sport_tbr_108_torun, sport_tbr_111_torun) %>% 
+   mutate(Whatman_Card = str_pad(Whatman_Card, 10, "left", "0")) %>%  # pad WGC
+   # mutate(SAMPLE_NO = str_pad(SAMPLE_NO, 2, "left", "0")) %>%  # pad well
+   unite(silly_source, c("Whatman_Card", "SAMPLE_NO"), sep = "_", remove = FALSE)  # silly_source
+)
+
+save_objects("sport_tbr_torun_asl", path = "../Objects")
+```
+
+### Compare with *LOKI*
+Excellent! Next we'll pull tissue collection info from OceanAK and join, need full 10 digit WGC number and Sample number
+```{r}
+(loki_tissue_sport_tbr <- read_csv(file = "../OceanAK/GEN_SAMPLED_FISH_TISSUE_KSPORT19.csv") %>% 
+   filter(is.na(IS_MISSING_PAIRED_DATA_EXISTS)) %>%  # make sure we aren't issing the tissue
+   select(`Silly Code`, FK_FISH_ID, DNA_TRAY_CODE, DNA_TRAY_WELL_CODE, PK_TISSUE_TYPE) %>% 
+   unite(silly_source, c("DNA_TRAY_CODE", "DNA_TRAY_WELL_CODE"), sep = "_", remove = FALSE)  # silly_source
+)
+```
+
+Are all my extraction fish in the LOKI tissue table?
+```{r}
+table(sport_tbr_torun_asl$silly_source %in% loki_tissue_sport_tbr$silly_source)
+```
+
+### Resolve Discrepancies
+Looks like we are missing 2 fish..., but which ones???
+```{r}
+missing_fish <- sort(setdiff(sport_tbr_torun_asl$silly_source, loki_tissue_sport_tbr$silly_source))
+
+sport_tbr_torun_asl %>% 
+  filter(silly_source %in% missing_fish) %>% 
+  select(DISTRICT, STATWEEK, SITE, silly_source)
+```
+
+Do these two Whatman cards exist in LOKI?
+```{r}
+loki_tissue_sport_tbr %>% 
+  filter(DNA_TRAY_CODE %in% c("0000004315", "0000023782"))
+```
+
+Nope, evidently neither card exists in LOKI...
+
+There are no more 108 fish available, so I'll just drop that one, but we do have additional D111 SW 26 fish to pick from, so I can replace that one.
+```{r}
+replacement_sport_tbr <- asl_sport_tbr %>% 
+  filter(DISTRICT == 111 & STATWEEK == 26) %>% 
+  mutate(Whatman_Card = str_pad(Whatman_Card, 10, "left", "0")) %>%  # pad WGC
+  unite(silly_source, c("Whatman_Card", "SAMPLE_NO"), sep = "_", remove = FALSE) %>%  # silly_source
+  anti_join(sport_tbr_torun_asl, by = "silly_source") %>% 
+  sample_n(1)
+```
+
+Drop missing fish, add one replacement
+```{r}
+(sport_tbr_torun_asl_mod <- sport_tbr_torun_asl %>% 
+   filter(!silly_source %in% missing_fish) %>% 
+   bind_rows(replacement_sport_tbr)
+)
+```
+
+### Duplicates
+
+Any duplicates?
+```{r}
+table(table(loki_tissue_sport_tbr$silly_source))
+table(table(sport_tbr_torun_asl_mod$silly_source))
+```
+
+Nope, excellent
+
+Everything still in LOKI?
+```{r}
+all(sport_tbr_torun_asl_mod$silly_source %in% loki_tissue_sport_tbr$silly_source)
+```
+
+Excellent, all present and accounted for. Verify that we have the correct numbers of fish per District
+```{r}
+sport_tbr_torun_asl_mod %>% 
+  count(DISTRICT)
+```
+
+### Format
+
+Join LOKI Tissue Table with ASL and format for Extraction List Template
+```{r}
+(sport_tbr_torun_extraction <- sport_tbr_torun_asl_mod %>% 
+   left_join(loki_tissue_sport_tbr, by = "silly_source") %>% 
+   mutate(`WELL CODE` = str_pad(DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = 0)) %>% 
+   mutate(`TISSUE TYPE` = str_replace(PK_TISSUE_TYPE, pattern = " Process", replacement = "")) %>% 
+   mutate(`TISSUE TYPE` = str_replace(`TISSUE TYPE`, pattern = " Clip", replacement = "")) %>% 
+   rename(SILLY = `Silly Code`, `SAMPLE #` = FK_FISH_ID, `WGC BARCODE` = `DNA_TRAY_CODE`) %>% 
+   select(SILLY, `SAMPLE #`, `WGC BARCODE`, `WELL CODE`, `TISSUE TYPE`) %>% 
+   arrange(SILLY, `WGC BARCODE`, `WELL CODE`)
+)
+```
+
+### Write
+```{r}
+write_csv(sport_tbr_torun_extraction, path = "../Extraction Lists/Sport_TBR_Extraction.csv")
+
+sport_tbr_torun_extraction %>% 
+  count(SILLY, `TISSUE TYPE`)
+```
+
+## Gillnet TBR + District 101 and 115
+
+### ASL Data
+
+#### Read raw ASL
+```{r}
+(asl_gillnet <- read_csv(file = "../ASL Data/20190822_Gillnet_D8_11_1_15_Detailed ASL Samples.csv"))
+```
+
+#### Manipulate ASL
+```{r}
+(asl_gillnet <- asl_gillnet %>% 
+   filter(District %in% c(108, 111) & `Length mm` >= 660 | District %in% c(101, 115)) %>% 
+   filter(`Stat Week` <= 29) %>% 
+   filter(!is.na(`Dna Specimen No`))
+)
+```
+
+#### Visualize ASL
+```{r}
+asl_gillnet %>% 
+  count(Year, District, `Stat Week`, `Harvest Code`) %>% 
+  spread(District, n, fill = 0)
+```
+
+
+## Harvest Data
+
+### Read Fish Ticket Data
+```{r}
+(harvest_gillnet <- read_csv(file = "../Harvest Data/20190822_gillnet_ft - Detailed Fish Tickets.csv"))
+```
+
+### Manipulate Harvest
+```{r}
+(harvest_gillnet <- harvest_gillnet %>% 
+   filter(District %in% c(101, 108, 111, 115)) %>% 
+   filter(between(`Stat Week`, 25, 29)) %>% 
+   filter(`Species Code And Name` == "410 - salmon, chinook") %>% 
+   filter(`Gear Code` == "03") %>% 
+   filter(`Harvest Code` == 11) %>% 
+   filter(Year == 2019)
+)
+```
+
+### Visualize Harvest
+```{r}
+harvest_gillnet %>% 
+  group_by(District, `Stat Week`) %>% 
+  summarise(harvest = sum(`Number Of Animals (sum)`, na.rm = TRUE)) %>% 
+  spread(District, harvest, fill = 0)
+```
+
+Check average weights
+```{r}
+harvest_gillnet %>% 
+  group_by(District, `Stat Week`) %>% 
+  summarise(Harvest = sum(`Number Of Animals (sum)`, na.rm = TRUE), Pounds = sum(`Landed Weight (sum)`, na.rm = TRUE)) %>% 
+  mutate(AvgWeight = Pounds/Harvest) %>% 
+  select(-Harvest, - Pounds) %>% 
+  spread(District, AvgWeight)
+```
+
+### Join ASL and Harvest
+```{r}
+harvest_sw_district <- harvest_gillnet %>% 
+  group_by(District, `Stat Week`) %>% 
+  summarise(Harvest = sum(`Number Of Animals (sum)`, na.rm = TRUE))
+
+(join_gillnet <- asl_gillnet %>% 
+    filter(!is.na(`Dna Specimen No`)) %>% 
+    count(`Stat Week`, District) %>% 
+    full_join(harvest_sw_district, by = c("Stat Week", "District")) %>% 
+    replace_na(list(n = 0, Harvest = 0)) %>% 
+    select(`Stat Week`, District, n , Harvest)
+)
+
+join_gillnet %>% 
+  filter(n > Harvest)
+```
+
+#### Plot ASL samples and harvest as proportions by fishery
+```{r}
+join_gillnet %>% 
+  group_by(District) %>% 
+  mutate(n = n / sum(n), harvest = Harvest / sum(Harvest)) %>% 
+  ungroup() %>% 
+  gather(variable, proportion, -`Stat Week`, -`District`, - Harvest) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = pretty_breaks()) +
+  facet_grid(District ~ variable, scales = "fixed") +
+  ggtitle("Proportion of Samples and Harvest\nby Stat Week and District for Gillnet AY19") +
+  theme_bw()
+```
+
+Thus the plan for extraction is to pick up to 200 fish, with the important caveat of subsampling in proportion to harvest by SW for each district
+
+**Business rule** is to take fish from within 2 SW on either side to fill in for missing
+
+```{r}
+join_gillnet %>% 
+  group_by(District) %>% 
+  summarise(Harvest = sum(Harvest), n = sum(n))
+```
+
+### 101 Gillnet
+
+Plan is to subsample as many fish as possible. What would proportional sampling look like?
+```{r}
+(extraction_gillnet_101 <- join_gillnet %>% 
+   filter(District == 101) %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * 200)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Plenty of fish, looks great.
+```{r}
+(extraction_gillnet_101 <- extraction_gillnet_101 %>% 
+   select(District, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_gillnet %>% 
+  filter(District == 101) %>% 
+  full_join(extraction_gillnet_101, by = c("District", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -District) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(District ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and District for Gillnet 101 AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+gillnet_101_torun <- asl_gillnet %>% 
+  filter(District == 101) %>% 
+  nest(-`Stat Week`) %>% 
+  right_join(extraction_gillnet_101, by = "Stat Week") %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample)
+```
+
+Verify picked fish
+```{r}
+gillnet_101_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 115 Gillnet
+
+Plan is to subsample as many fish as possible. What would proportional sampling look like?
+```{r}
+(extraction_gillnet_115 <- join_gillnet %>% 
+   filter(District == 115) %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * 200)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Plenty of fish, looks great.
+```{r}
+(extraction_gillnet_115 <- extraction_gillnet_115 %>% 
+   mutate(n_extract = case_when(`Stat Week` == 27 ~ 30,
+                                TRUE ~ n_extract)) %>% 
+   select(District, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_gillnet %>% 
+  filter(District == 115) %>% 
+  full_join(extraction_gillnet_115, by = c("District", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -District) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(District ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and District for Gillnet 115 AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+gillnet_115_torun <- asl_gillnet %>% 
+  filter(District == 115) %>% 
+  nest(-`Stat Week`) %>% 
+  right_join(extraction_gillnet_115, by = "Stat Week") %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample)
+```
+
+Verify picked fish
+```{r}
+gillnet_115_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 108 Gillnet TBR
+
+Plan is to subsample as many fish as possible. What would proportional sampling look like?
+```{r}
+(extraction_gillnet_108 <- join_gillnet %>% 
+   filter(District == 108) %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * 105)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Doesn't look great...but goign to go with all fish
+```{r}
+(extraction_gillnet_108 <- extraction_gillnet_108 %>% 
+   mutate(n_extract = case_when(`Stat Week` == 26 ~ 28,
+                                `Stat Week` == 29 ~ 17,
+                                TRUE ~ n_extract)) %>% 
+   select(District, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_gillnet %>% 
+  filter(District == 108) %>% 
+  full_join(extraction_gillnet_108, by = c("District", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -District) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(District ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and District for Gillnet 108 AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+gillnet_108_torun <- asl_gillnet %>% 
+  filter(District == 108) %>% 
+  nest(-`Stat Week`) %>% 
+  right_join(extraction_gillnet_108, by = "Stat Week") %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample)
+```
+
+Verify picked fish
+```{r}
+gillnet_108_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 111 Gillnet TBR
+
+Plan is to subsample as many fish as possible. What would proportional sampling look like?
+```{r}
+(extraction_gillnet_111 <- join_gillnet %>% 
+   filter(District == 111) %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * 115)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Doesn't look great...but goign to go with all fish
+```{r}
+(extraction_gillnet_111 <- extraction_gillnet_111 %>% 
+   mutate(n_extract = case_when(`Stat Week` == 27 ~ 48,
+                                TRUE ~ n_extract)) %>% 
+   select(District, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_gillnet %>% 
+  filter(District == 111) %>% 
+  full_join(extraction_gillnet_111, by = c("District", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -District) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(District ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and District for Gillnet 111 AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+gillnet_111_torun <- asl_gillnet %>% 
+  filter(District == 111) %>% 
+  nest(-`Stat Week`) %>% 
+  right_join(extraction_gillnet_111, by = "Stat Week") %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample)
+```
+
+Verify picked fish
+```{r}
+gillnet_111_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### Gillnet Extraction
+
+Combine in to a single tibble.
+```{r}
+gillnet_torun_asl <- bind_rows(gillnet_101_torun, gillnet_108_torun, gillnet_111_torun, gillnet_115_torun)
+gillnet_torun_asl %>% 
+  count(District)
+
+save_objects("gillnet_torun_asl", path = "../Objects")
+```
+
+Plot proportions
+```{r}
+join_gillnet %>% 
+  full_join(gillnet_torun_asl %>% count(District, `Stat Week`), by = c("District", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  replace_na(list(n_sample = 0, n_extract = 0, Harvest = 0)) %>%  # replace NA in samples and harvest with 0
+  group_by(District) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -District) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(District ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and District for Gillnet AY19") +
+  theme_bw()
+```
+
+## Write Gillnet Extraction List
+
+Confirm that all `Dna Specimen No` are 6 characters before splitting
+```{r}
+table(nchar(gillnet_torun_asl$`Dna Specimen No`))
+```
+
+Damn
+```{r}
+gillnet_torun_asl %>% 
+  filter(nchar(`Dna Specimen No`) == 5)
+```
+
+Checked Iris' summary for the other card, and it looks like it was missing the leading 5.
+
+Yes, that one is just missing the last 0
+```{r}
+gillnet_torun_asl <- gillnet_torun_asl %>% 
+  mutate(`Dna Specimen No` = case_when(`Dna Specimen No` == 31404 ~ 531404,
+                                       TRUE ~ `Dna Specimen No`))
+```
+
+Confirm both fixed
+```{r}
+table(nchar(gillnet_torun_asl$`Dna Specimen No`))
+```
+
+### Compare with *LOKI*
+Excellent! Next we'll pull tissue collection info from OceanAK and join, need full 10 digit WGC number and Sample number
+```{r}
+(loki_tissue_gillnet <- read_csv(file = "../OceanAK/GEN_SAMPLED_FISH_TISSUE_KGILL19D1_D11_D8_D15.csv") %>% 
+   filter(is.na(IS_MISSING_PAIRED_DATA_EXISTS)) %>%  # make sure we aren't issing the tissue
+   select(`Silly Code`, FK_FISH_ID, DNA_TRAY_CODE, DNA_TRAY_WELL_CODE, PK_TISSUE_TYPE) %>% 
+   mutate(WGC_4digit = str_sub(DNA_TRAY_CODE, 7, 10)) %>% 
+   mutate(WGC_2digit_pos = str_pad(string = DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = 0)) %>% 
+   unite(dna_specimen_no, c(WGC_4digit, WGC_2digit_pos), sep = '', remove = FALSE) %>% 
+   mutate(dna_specimen_no = as.integer(dna_specimen_no))
+)
+```
+
+Are all my extraction fish in the LOKI tissue table?
+```{r}
+table(gillnet_torun_asl$`Dna Specimen No` %in% loki_tissue_gillnet$dna_specimen_no)
+```
+
+### Resolve Discrepancies
+Looks like we are missing 1 fish..., but which ones???
+```{r}
+missing_fish <- sort(setdiff(gillnet_torun_asl$`Dna Specimen No`, loki_tissue_gillnet$dna_specimen_no))
+
+gillnet_torun_asl %>% 
+  filter(`Dna Specimen No` %in% missing_fish) %>% 
+  select(District, `Stat Week`, `Dna Specimen No`)
+```
+
+Are there more fish left for this SW?
+```{r}
+asl_gillnet %>% 
+  filter(District == 111 & `Stat Week` == 27) %>% 
+  anti_join(gillnet_torun_asl) %>% 
+  arrange(`Dna Specimen No`)
+```
+
+Grab the next fish? If exists in LOKI
+```{r}
+loki_tissue_gillnet %>% 
+  filter(dna_specimen_no == 510209)
+```
+
+```{r}
+gillnet_torun_asl_mod <- gillnet_torun_asl %>% 
+  filter(`Dna Specimen No` != 510309) %>% 
+  bind_rows(asl_gillnet %>% filter(`Dna Specimen No` == 510209))
+```
+
+Are all my extraction fish in the LOKI tissue table?
+```{r}
+table(gillnet_torun_asl_mod$`Dna Specimen No` %in% loki_tissue_gillnet$dna_specimen_no)
+```
+
+### Duplicates
+Any duplicates?
+```{r}
+table(table(loki_tissue_gillnet$dna_specimen_no))
+table(table(gillnet_torun_asl_mod$`Dna Specimen No`))
+```
+
+Shit, looks like five fish selected for extraction have the same Dna Specimen No, which are they?
+```{r}
+gillnet_torun_asl_mod %>% 
+  count(`Dna Specimen No`) %>% 
+  filter(n > 1)
+```
+
+Where are they from?
+```{r}
+gillnet_torun_asl_mod %>% 
+  filter(`Dna Specimen No` %in% c(419301, 419303, 419309, 419605, 419607))
+```
+
+The fish from Ketchikan, D101, SW 27 actually have a 5 digit WGC = 34195. So these fish are actually fine.
+```{r}
+gillnet_torun_asl_mod <- gillnet_torun_asl_mod %>% 
+  mutate(`Dna Specimen No` = case_when(`Dna Specimen No` == 419301 & `Port Code` == "KTN" ~ 3419301,
+                                       `Dna Specimen No` == 419303 & `Port Code` == "KTN" ~ 3419303,
+                                       `Dna Specimen No` == 419309 & `Port Code` == "KTN" ~ 3419309,
+                                       `Dna Specimen No` == 419605 & `Port Code` == "KTN" ~ 3419605,
+                                       `Dna Specimen No` == 419607 & `Port Code` == "KTN" ~ 3419607,
+                                       TRUE ~ `Dna Specimen No`))
+```
+
+Need to fix LOKI too otherwise join won't work
+```{r}
+WGC_5digits <- loki_tissue_gillnet %>% 
+  mutate(WGC_5digit = as.integer(str_sub(DNA_TRAY_CODE, 6, 10))) %>% 
+  filter(nchar(WGC_5digit) == 5) %>% 
+  distinct(DNA_TRAY_CODE) %>% 
+  pull(DNA_TRAY_CODE)
+
+
+loki_tissue_gillnet <- loki_tissue_gillnet %>% 
+  mutate(WGC_5digit = str_sub(DNA_TRAY_CODE, 6, 10)) %>% 
+  mutate(WGC_2digit_pos = str_pad(string = DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = 0)) %>% 
+  unite(dna_specimen_no_7, c(WGC_5digit, WGC_2digit_pos), sep = '', remove = FALSE) %>% 
+  mutate(dna_specimen_no = case_when(DNA_TRAY_CODE %in% WGC_5digits ~ as.integer(dna_specimen_no_7),
+                                     TRUE ~ dna_specimen_no))
+```
+
+Any duplicates now?
+```{r}
+table(table(gillnet_torun_asl_mod$`Dna Specimen No`))
+table(table(loki_tissue_gillnet$dna_specimen_no))
+```
+
+And everything still in LOKI?
+```{r}
+table(gillnet_torun_asl_mod$`Dna Specimen No` %in% loki_tissue_gillnet$dna_specimen_no)
+```
+
+```{r}
+missing_fish2 <- setdiff(gillnet_torun_asl$`Dna Specimen No`, loki_tissue_gillnet$dna_specimen_no)
+
+gillnet_torun_asl_mod <- gillnet_torun_asl_mod %>% 
+  mutate(`Dna Specimen No` = case_when(`Dna Specimen No` %in% missing_fish2 ~ as.numeric(paste0(3, `Dna Specimen No`)),
+                                       TRUE ~ `Dna Specimen No`))
+```
+
+Any duplicates now?
+```{r}
+table(table(gillnet_torun_asl_mod$`Dna Specimen No`))
+table(table(loki_tissue_gillnet$dna_specimen_no))
+```
+
+And everything still in LOKI?
+```{r}
+table(gillnet_torun_asl_mod$`Dna Specimen No` %in% loki_tissue_gillnet$dna_specimen_no)
+```
+
+Excellent, all present and accounted for. Verify that we have the correct numbers of fish per district
+```{r}
+gillnet_torun_asl_mod %>% 
+  count(District)
+```
+
+### More Discrepancies
+
+ASL says one district, but Silly Code is another
+```{r}
+gillnet_torun_asl_mod %>% 
+  left_join(loki_tissue_gillnet, by = c(`Dna Specimen No` = "dna_specimen_no")) %>% 
+  count(District, `Silly Code`)
+```
+
+```{r}
+gillnet_torun_asl_mod %>% 
+  left_join(loki_tissue_gillnet, by = c(`Dna Specimen No` = "dna_specimen_no")) %>% 
+  filter(District == 101 & `Silly Code` == "KGILL19D8")
+```
+
+Pick two different fish
+```{r}
+asl_gillnet %>% 
+  filter(District == 101 & `Stat Week` == 27) %>% 
+  anti_join(gillnet_torun_asl_mod, by = c("Scale Card No", "Specimen Number", "Average Length mm", "Sample Date"))
+```
+
+```{r}
+gillnet_torun_asl_mod <- gillnet_torun_asl_mod %>% 
+  filter(!`Dna Specimen No` %in% c(419609, 419101)) %>% 
+  bind_rows(asl_gillnet %>% filter(`Dna Specimen No` %in% c(500601, 500603)))
+```
+
+Any duplicates now?
+```{r}
+table(table(gillnet_torun_asl_mod$`Dna Specimen No`))
+table(table(loki_tissue_gillnet$dna_specimen_no))
+```
+
+And everything still in LOKI?
+```{r}
+table(gillnet_torun_asl_mod$`Dna Specimen No` %in% loki_tissue_gillnet$dna_specimen_no)
+```
+
+Excellent, all present and accounted for. Verify that we have the correct numbers of fish per district
+```{r}
+gillnet_torun_asl_mod %>% 
+  count(District)
+```
+
+### Format
+
+Join LOKI Tissue Table with ASL and format for Extraction List Template
+```{r}
+(gillnet_torun_extraction <- gillnet_torun_asl_mod %>% 
+   left_join(loki_tissue_gillnet, by = c(`Dna Specimen No` = "dna_specimen_no")) %>% 
+   mutate(`WELL CODE` = str_pad(DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = 0)) %>% 
+   mutate(`TISSUE TYPE` = str_replace(PK_TISSUE_TYPE, pattern = " Process", replacement = "")) %>% 
+   mutate(`TISSUE TYPE` = str_replace(`TISSUE TYPE`, pattern = " Clip", replacement = "")) %>% 
+   rename(SILLY = `Silly Code`, `SAMPLE #` = FK_FISH_ID, `WGC BARCODE` = `DNA_TRAY_CODE`) %>% 
+   select(SILLY, `SAMPLE #`, `WGC BARCODE`, `WELL CODE`, `TISSUE TYPE`) %>% 
+   arrange(SILLY, `WGC BARCODE`, `WELL CODE`)
+)
+```
+
+### Write
+```{r}
+write_csv(gillnet_torun_extraction, path = "../Extraction Lists/Gillnet_Extraction.csv")
+
+gillnet_torun_extraction %>% 
+  count(SILLY, `TISSUE TYPE`)
+```
 
