@@ -323,15 +323,15 @@ Summarize results for both the full 33 reporting groups, the 5 TBR groups, 3 TBR
 Create standard summary and tall tibble, save both.
 ```{r BAYES_summarise_33RG}
 # full 33 reporting groups
-TBR_2018_33RG_EstimatesStats <- 
+TBR_2019_33RG_EstimatesStats <- 
   CustomCombineBAYESOutput.GCL(groupvec = 1:33, groupnames = GroupNames33, maindir = "../BAYES/Output", mixvec = TBR_mixnames,
                                prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
 
 # make in to a tidy tibble (tall)
-TBR_2018_33RG_estimates.tdy <- 
+TBR_2019_33RG_estimates.tdy <- 
   bind_rows(
     lapply(TBR_mixnames, function(mix) {  # loop over mixture names
-      TBR_2018_33RG_EstimatesStats[[mix]] %>%  # for each matrix
+      TBR_2019_33RG_EstimatesStats[[mix]] %>%  # for each matrix
         as_tibble(rownames = "group") %>%  # make tibble with rownames as group
         mutate(mixname = mix) %>%  # make column for mixname
         mutate(n_group = n_distinct(group))  # make column for number of groups
@@ -345,7 +345,7 @@ TBR_2018_33RG_estimates.tdy <-
   mutate(group = factor(group, GroupNames33))  # factor for ordering
 
 dir.create("../Estimates objects")
-save_objects(c("TBR_2018_33RG_EstimatesStats", "TBR_2018_33RG_estimates.tdy"), "../Estimates objects")
+save_objects(c("TBR_2019_33RG_EstimatesStats", "TBR_2019_33RG_estimates.tdy"), "../Estimates objects")
 ```
 
 ## 5 TBR reporting groups
@@ -360,15 +360,15 @@ GroupVec33RG_to5RG <- case_when(GroupNames33 == GroupNames5[1] ~ 1,
                                 TRUE ~ 5)
 save_objects("GroupVec33RG_to5RG", "../Objects/")
 
-TBR_2018_5RG_EstimatesStats <- 
+TBR_2019_5RG_EstimatesStats <- 
   CustomCombineBAYESOutput.GCL(groupvec = GroupVec33RG_to5RG, groupnames = GroupNames5, maindir = "../BAYES/Output", mixvec = TBR_mixnames,
                                prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
 
 # make in to a tidy tibble (tall)
-TBR_2018_5RG_estimates.tdy <- 
+TBR_2019_5RG_estimates.tdy <- 
   bind_rows(
     lapply(TBR_mixnames, function(mix) {  # loop over mixture names
-      TBR_2018_5RG_EstimatesStats[[mix]] %>%  # for each matrix
+      TBR_2019_5RG_EstimatesStats[[mix]] %>%  # for each matrix
         as_tibble(rownames = "group") %>%  # make tibble with rownames as group
         mutate(mixname = mix) %>%  # make column for mixname
         mutate(n_group = n_distinct(group))  # make column for number of groups
@@ -381,10 +381,10 @@ TBR_2018_5RG_estimates.tdy <-
   mutate(estimator = factor(estimator, c("mean", "sd", "5%", "95%", "median", "P=0", "GR"))) %>%  # factor for ordering
   mutate(group = factor(group, GroupNames5))  # factor for ordering
 
-save_objects(c("TBR_2018_5RG_EstimatesStats", "TBR_2018_5RG_estimates.tdy"), "../Estimates objects")
+save_objects(c("TBR_2019_5RG_EstimatesStats", "TBR_2019_5RG_estimates.tdy"), "../Estimates objects")
 
 dir.create("../Estimates tables tidy")
-write_csv(TBR_2018_5RG_estimates.tdy, "../Estimates tables tidy/TBR_2018_5RG_estimates.csv")
+write_csv(TBR_2019_5RG_estimates.tdy, "../Estimates tables tidy/TBR_2019_5RG_estimates.csv")
 ```
 
 ## 3 TBR reporting groups
@@ -399,15 +399,15 @@ GroupVec33RG_to3RG <- case_when(GroupNames33 == GroupNames5[1] ~ 1,
                                 TRUE ~ 3)
 save_objects("GroupVec33RG_to3RG", "../Objects/")
 
-TBR_2018_3RG_EstimatesStats <- 
+TBR_2019_3RG_EstimatesStats <- 
   CustomCombineBAYESOutput.GCL(groupvec = GroupVec33RG_to3RG, groupnames = GroupNames3, maindir = "../BAYES/Output", mixvec = TBR_mixnames,
                                prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
 
 # make in to a tidy tibble (tall)
-TBR_2018_3RG_estimates.tdy <- 
+TBR_2019_3RG_estimates.tdy <- 
   bind_rows(
     lapply(TBR_mixnames, function(mix) {  # loop over mixture names
-      TBR_2018_3RG_EstimatesStats[[mix]] %>%  # for each matrix
+      TBR_2019_3RG_EstimatesStats[[mix]] %>%  # for each matrix
         as_tibble(rownames = "group") %>%  # make tibble with rownames as group
         mutate(mixname = mix) %>%  # make column for mixname
         mutate(n_group = n_distinct(group))  # make column for number of groups
@@ -420,7 +420,7 @@ TBR_2018_3RG_estimates.tdy <-
   mutate(estimator = factor(estimator, c("mean", "sd", "5%", "95%", "median", "P=0", "GR"))) %>%  # factor for ordering
   mutate(group = factor(group, GroupNames3))  # factor for ordering
 
-save_objects(c("TBR_2018_3RG_EstimatesStats", "TBR_2018_3RG_estimates.tdy"), "../Estimates objects")
+save_objects(c("TBR_2019_3RG_EstimatesStats", "TBR_2019_3RG_estimates.tdy"), "../Estimates objects")
 ```
 
 ## 2 TBR reporting groups
@@ -435,15 +435,15 @@ GroupVec33RG_to2RG <- case_when(GroupNames33 == GroupNames5[1] ~ 1,
                                 TRUE ~ 2)
 save_objects("GroupVec33RG_to2RG", "../Objects/")
 
-TBR_2018_2RG_EstimatesStats <- 
+TBR_2019_2RG_EstimatesStats <- 
   CustomCombineBAYESOutput.GCL(groupvec = GroupVec33RG_to2RG, groupnames = GroupNames2, maindir = "../BAYES/Output", mixvec = TBR_mixnames,
                                prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
 
 # make in to a tidy tibble (tall)
-TBR_2018_2RG_estimates.tdy <- 
+TBR_2019_2RG_estimates.tdy <- 
   bind_rows(
     lapply(TBR_mixnames, function(mix) {  # loop over mixture names
-      TBR_2018_2RG_EstimatesStats[[mix]] %>%  # for each matrix
+      TBR_2019_2RG_EstimatesStats[[mix]] %>%  # for each matrix
         as_tibble(rownames = "group") %>%  # make tibble with rownames as group
         mutate(mixname = mix) %>%  # make column for mixname
         mutate(n_group = n_distinct(group))  # make column for number of groups
@@ -456,7 +456,7 @@ TBR_2018_2RG_estimates.tdy <-
   mutate(estimator = factor(estimator, c("mean", "sd", "5%", "95%", "median", "P=0", "GR"))) %>%  # factor for ordering
   mutate(group = factor(group, GroupNames2))  # factor for ordering
 
-save_objects(c("TBR_2018_2RG_EstimatesStats", "TBR_2018_2RG_estimates.tdy"), "../Estimates objects")
+save_objects(c("TBR_2019_2RG_EstimatesStats", "TBR_2019_2RG_estimates.tdy"), "../Estimates objects")
 ```
 
 # Output tables
@@ -467,7 +467,7 @@ Need to add data to the exisiting "D8&11 Estimates" summary spreadsheet.
 
 Need to check Gelman-Rubin first to verify that all estimates are < 1.2 for 5 TBR reporting groups.
 ```{r GR_check}
-all(TBR_2018_5RG_estimates.tdy %>% filter(estimator == "GR") %>% pull(value) < 1.2)
+all(TBR_2019_5RG_estimates.tdy %>% filter(estimator == "GR") %>% pull(value) < 1.2)
 ```
 
 ## Estimates
@@ -475,17 +475,21 @@ all(TBR_2018_5RG_estimates.tdy %>% filter(estimator == "GR") %>% pull(value) < 1
 Great, now that we know our data converged for the 5 TBR reporting groups, we can summarise the tall, tidy, tibble for the summary spreadsheet for each mixture and reporting group combination.
 
 ```{r 5RG_estimates}
-TBR_2018_5RG_EstimatesStats
+TBR_2019_5RG_EstimatesStats
+```
+
+```{r}
+TBR_sample_sizes
 ```
 
 
 ### Gill D108 5RG
 
 ```{r D108Gill_5RG}
-TBR_2018_5RG_estimates.tdy %>% 
+TBR_2019_5RG_estimates.tdy %>% 
   filter(n_group == 5) %>%  # want 5RG
   filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
-  filter(mixname == "D108Gill_2018") %>%  # specify mixture
+  filter(mixname == "D108Gill_2019") %>%  # specify mixture
   spread(group, value) %>%  # wide
   select(GroupNames5) %>%  # toss other varialbes
   write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
@@ -494,10 +498,10 @@ TBR_2018_5RG_estimates.tdy %>%
 ### Gill D108 3RG
 
 ```{r D108Gill_3RG}
-TBR_2018_3RG_estimates.tdy %>% 
+TBR_2019_3RG_estimates.tdy %>% 
   filter(n_group == 3) %>%  # want 3RG
   filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
-  filter(mixname == "D108Gill_2018") %>%  # specify mixture
+  filter(mixname == "D108Gill_2019") %>%  # specify mixture
   spread(group, value) %>%  # wide
   select(GroupNames3) %>%  # toss other varialbes
   write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
@@ -506,10 +510,10 @@ TBR_2018_3RG_estimates.tdy %>%
 ### Gill D108 2RG
 
 ```{r D108Gill_2RG}
-TBR_2018_2RG_estimates.tdy %>% 
+TBR_2019_2RG_estimates.tdy %>% 
   filter(n_group == 2) %>%  # want 5RG
   filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
-  filter(mixname == "D108Gill_2018") %>%  # specify mixture
+  filter(mixname == "D108Gill_2019") %>%  # specify mixture
   spread(group, value) %>%  # wide
   select(GroupNames2) %>%  # toss other varialbes
   write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
@@ -518,10 +522,10 @@ TBR_2018_2RG_estimates.tdy %>%
 ### Gill D111 5RG
 
 ```{r D111Gill_5RG}
-TBR_2018_5RG_estimates.tdy %>% 
+TBR_2019_5RG_estimates.tdy %>% 
   filter(n_group == 5) %>%  # want 5RG
   filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
-  filter(mixname == "D111Gill_2018") %>%  # specify mixture
+  filter(mixname == "D111Gill_2019") %>%  # specify mixture
   spread(group, value) %>%  # wide
   select(GroupNames5) %>%  # toss other varialbes
   write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
@@ -530,10 +534,10 @@ TBR_2018_5RG_estimates.tdy %>%
 ### Gill D111 3RG
 
 ```{r D111Gill_3RG}
-TBR_2018_3RG_estimates.tdy %>% 
+TBR_2019_3RG_estimates.tdy %>% 
   filter(n_group == 3) %>%  # want 3RG
   filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
-  filter(mixname == "D111Gill_2018") %>%  # specify mixture
+  filter(mixname == "D111Gill_2019") %>%  # specify mixture
   spread(group, value) %>%  # wide
   select(GroupNames3) %>%  # toss other varialbes
   write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
@@ -542,10 +546,22 @@ TBR_2018_3RG_estimates.tdy %>%
 ### Gill D111 2RG
 
 ```{r D111Gill_2RG}
-TBR_2018_2RG_estimates.tdy %>% 
+TBR_2019_2RG_estimates.tdy %>% 
   filter(n_group == 2) %>%  # want 5RG
   filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
-  filter(mixname == "D111Gill_2018") %>%  # specify mixture
+  filter(mixname == "D111Gill_2019") %>%  # specify mixture
+  spread(group, value) %>%  # wide
+  select(GroupNames2) %>%  # toss other varialbes
+  write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
+```
+
+### Sport D108 2RG
+
+```{r D108Sport_2RG}
+TBR_2019_2RG_estimates.tdy %>% 
+  filter(n_group == 2) %>%  # want 5RG
+  filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
+  filter(mixname == "D108Sport_2019") %>%  # specify mixture
   spread(group, value) %>%  # wide
   select(GroupNames2) %>%  # toss other varialbes
   write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
@@ -554,10 +570,10 @@ TBR_2018_2RG_estimates.tdy %>%
 ### Sport D111 5RG
 
 ```{r D111Sport_5RG}
-TBR_2018_5RG_estimates.tdy %>% 
+TBR_2019_5RG_estimates.tdy %>% 
   filter(n_group == 5) %>%  # want 5RG
   filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
-  filter(mixname == "D111Sport_2018") %>%  # specify mixture
+  filter(mixname == "D111Sport_2019") %>%  # specify mixture
   spread(group, value) %>%  # wide
   select(GroupNames5) %>%  # toss other varialbes
   write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
@@ -566,10 +582,10 @@ TBR_2018_5RG_estimates.tdy %>%
 ### Sport D111 3RG
 
 ```{r D111Sport_3RG}
-TBR_2018_3RG_estimates.tdy %>% 
+TBR_2019_3RG_estimates.tdy %>% 
   filter(n_group == 3) %>%  # want 3RG
   filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
-  filter(mixname == "D111Sport_2018") %>%  # specify mixture
+  filter(mixname == "D111Sport_2019") %>%  # specify mixture
   spread(group, value) %>%  # wide
   select(GroupNames3) %>%  # toss other varialbes
   write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
@@ -578,10 +594,10 @@ TBR_2018_3RG_estimates.tdy %>%
 ### Sport D111 2RG
 
 ```{r D111Sport_2RG}
-TBR_2018_2RG_estimates.tdy %>% 
+TBR_2019_2RG_estimates.tdy %>% 
   filter(n_group == 2) %>%  # want 5RG
   filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
-  filter(mixname == "D111Sport_2018") %>%  # specify mixture
+  filter(mixname == "D111Sport_2019") %>%  # specify mixture
   spread(group, value) %>%  # wide
   select(GroupNames2) %>%  # toss other varialbes
   write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
@@ -596,8 +612,8 @@ The summary spreadsheet has tabs for "Gill_SampleInfo" and "Sport_SampleInfo" th
 Read in gillnet ASL data for extracted fish and add to spreadsheet, then re-do pivot table.
 ```{r gill_metadata}
 # join extraction asl with fish passing QA, select columns, copy to clipboard
-TBR_gill_ASL.tib %>% 
-  mutate(Subdistrict = str_sub(District, 5, 6)) %>% 
+gill_ASL %>% 
+  mutate(Subdistrict = `Sub-District`) %>%  # str_sub(District, 5, 6)
   mutate(SizeClass = case_when(`Average Length mm` >= 660 ~ "LARGE",
                                `Average Length mm` < 660 ~ "SMALL")) %>% 
   right_join(
@@ -625,12 +641,8 @@ TBR_gill_ASL.tib %>%
 Read in sport ASL data for extracted fish and add to spreadsheet, then re-do pivot table.
 ```{r sport_metadata}
 # join extraction asl with fish passing QA, select columns, copy to clipboard
-TBR_sport_ASL.tib %>% 
-  unite(GSI, c(Whatman_Card, SAMPLE_NO), sep = "_", remove = FALSE) %>% 
-  right_join(KSPORT19.gcl$attributes %>% 
-               mutate(DNA_TRAY_CODE = as.integer(DNA_TRAY_CODE)) %>% 
-               unite(GSI, c(DNA_TRAY_CODE, DNA_TRAY_WELL_CODE), sep = "_", remove = FALSE)
-             , by = "GSI") %>% 
+KSPORT19.gcl$attributes %>% 
+  unite(GSI, c("DNA_TRAY_CODE", "DNA_TRAY_WELL_CODE")) %>% 
   select(Year, SITE, DATE, STATWEEK, LENGTH, GSI, BIWEEK, DISTRICT, FK_FISH_ID) %>% 
   write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)
 ```
