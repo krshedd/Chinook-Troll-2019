@@ -17,6 +17,7 @@ library(lubridate)
 library(scales)
 
 source("~/../R/Functions.GCL.R")
+load_objects("../Objects/")
 ```
 
 # Winter Troll
@@ -1693,6 +1694,7 @@ Assign fishery
 )
 ```
 
+
 ### Visualize ASL
 
 Samples by fishery and quadrant
@@ -1721,6 +1723,87 @@ asl_summer %>%
   ggtitle("Samples by Stat Week")
 ```
 
+### Read Tissue Table from *LOKI*
+Excellent! Next we'll pull tissue collection info from OceanAK and join, need full 10 digit WGC number and Sample number
+```{r}
+(loki_tissue_summer <- read_csv(file = "../OceanAK/GEN_SAMPLED_FISH_TISSUE_KTROL19SU.csv") %>% 
+   filter(is.na(IS_MISSING_PAIRED_DATA_EXISTS)) %>%  # make sure we aren't issing the tissue
+   select(`Silly Code`, FK_FISH_ID, DNA_TRAY_CODE, DNA_TRAY_WELL_CODE, PK_TISSUE_TYPE) %>% 
+   mutate(WGC_4digit = str_sub(DNA_TRAY_CODE, 7, 10)) %>% 
+   mutate(WGC_2digit_pos = str_pad(string = DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = 0)) %>% 
+   unite(dna_specimen_no, c(WGC_4digit, WGC_2digit_pos), sep = '', remove = FALSE) %>% 
+   mutate(dna_specimen_no = as.integer(dna_specimen_no))
+)
+```
+
+### Duplicates in Dna Specimen Number
+Any duplicates in *LOKI* or ASL?
+```{r}
+asl_summer <- asl_summer %>% 
+  filter(Fishery %in% c("Summer Ret 1", "Summer Ret 2") & Year == 2019)
+
+table(table(loki_tissue_summer$dna_specimen_no))
+table(table(asl_summer$`Dna Specimen No`))
+```
+
+Shit, I need to deal with all of the duplicates in *LOKI* before doing anything else or it will cause problems with joining the OceanAK data with the ASL data by `Dna Specimen No`. Figure out which cards are the issue.
+```{r}
+loki_dups <- loki_tissue_summer %>% 
+  count(dna_specimen_no, WGC_4digit) %>% 
+  filter(n > 1) %>% 
+  distinct(WGC_4digit) %>% 
+  pull(WGC_4digit)
+
+loki_tissue_summer %>% 
+  filter(WGC_4digit %in% loki_dups) %>% 
+  select(DNA_TRAY_CODE, WGC_4digit) %>% 
+  arrange(WGC_4digit) %>% 
+  distinct()
+```
+
+And where are they in ASL (i.e. where are they from?)
+```{r}
+asl_summer %>% 
+  mutate(WGC_4digit = str_sub(string = `Dna Specimen No`, start = 1, end = 4)) %>% 
+  filter(WGC_4digit %in% loki_dups) %>% 
+  select(WGC_4digit, `Sample Date`, Quadrant, `Port Code`, `Stat Week`) %>% 
+  arrange(WGC_4digit) %>% 
+  distinct()
+```
+
+After checking Iris' sheet, the 100000XXXX WGC are from Wrangell and the 000003XXXX WGC are from Ketchikan!
+```{r}
+asl_summer <- asl_summer %>%
+  mutate(WGC_4digit = str_sub(string = `Dna Specimen No`, start = 1, end = 4)) %>%
+  mutate(`Dna Specimen No` = case_when(
+      WGC_4digit %in% loki_dups & `Port Code` == "KTN" ~ as.numeric(paste0(3, `Dna Specimen No`)),
+      TRUE ~ `Dna Specimen No`
+    )
+  )
+```
+
+Did we fix ASL?
+```{r}
+table(table(asl_summer$`Dna Specimen No`))
+table(nchar(asl_summer$`Dna Specimen No`))
+```
+
+Huzzah! Now to fix *LOKI*
+```{r}
+loki_tissue_summer <- loki_tissue_summer %>% 
+  mutate(dna_specimen_no = case_when(
+    DNA_TRAY_CODE %in% c("0000034199", "0000034204", "0000034210") ~ as.integer(paste0(3, dna_specimen_no)), 
+    TRUE ~ dna_specimen_no
+  ))
+```
+
+Did we fix *LOKI*?
+```{r}
+table(table(loki_tissue_summer$dna_specimen_no))
+table(nchar(loki_tissue_summer$dna_specimen_no))
+```
+
+Cool beans. There were 3 sets of cards with duplicate WGC_4digit (last 4). We identified which ones were 100000XXXX vs. 000003XXXX and assigned the 000003XXXX fish a 7 digit Dna Specimen No that includes the 3. This was done both on the *OceanAK* side and the *ASL* side. So we shouldn't have any issues when we pick fish.
 
 ## Harvest Data
 
@@ -1848,31 +1931,16 @@ save_objects(objects = "summer_torun_asl", path = "../Objects/")
 
 ## Write Summer Extraction List
 
-Confirm that all `Dna Specimen No` are 6 characters before splitting
-```{r}
-table(nchar(summer_torun_asl$`Dna Specimen No`))
-```
+We already dealt with duplicate issues at the beginning, so now we should just have to see if all of our ASL fish exist in OceanAK.
 
 ### Compare with *LOKI*
-Excellent! Next we'll pull tissue collection info from OceanAK and join, need full 10 digit WGC number and Sample number
-```{r}
-(loki_tissue_summer <- read_csv(file = "../OceanAK/GEN_SAMPLED_FISH_TISSUE_KTROL19SU.csv") %>% 
-   filter(is.na(IS_MISSING_PAIRED_DATA_EXISTS)) %>%  # make sure we aren't issing the tissue
-   select(`Silly Code`, FK_FISH_ID, DNA_TRAY_CODE, DNA_TRAY_WELL_CODE, PK_TISSUE_TYPE) %>% 
-   mutate(WGC_4digit = str_sub(DNA_TRAY_CODE, 7, 10)) %>% 
-   mutate(WGC_2digit_pos = str_pad(string = DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = 0)) %>% 
-   unite(dna_specimen_no, c(WGC_4digit, WGC_2digit_pos), sep = '', remove = FALSE) %>% 
-   mutate(dna_specimen_no = as.integer(dna_specimen_no))
-)
-```
-
 Are all my extraction fish in the LOKI tissue table?
 ```{r}
 table(summer_torun_asl$`Dna Specimen No` %in% loki_tissue_summer$dna_specimen_no)
 ```
 
 ### Resolve Discrepancies
-Looks like we are missing 5 fish..., but which ones???
+Looks like we are missing 4 fish..., but which ones???
 ```{r}
 missing_fish <- sort(setdiff(summer_torun_asl$`Dna Specimen No`, loki_tissue_summer$dna_specimen_no))
 
@@ -1883,16 +1951,17 @@ summer_torun_asl %>%
 
 Do these two Whatman cards exist in LOKI?
 ```{r}
-sum(grepl(pattern = 2051, x = loki_tissue_summer$DNA_TRAY_CODE))
-sum(grepl(pattern = 2240, x = loki_tissue_summer$DNA_TRAY_CODE))
-sum(grepl(pattern = 3900, x = loki_tissue_summer$DNA_TRAY_CODE))
+sum(grepl(pattern = 2432, x = loki_tissue_summer$WGC_4digit))
+sum(grepl(pattern = 2240, x = loki_tissue_summer$WGC_4digit))
+sum(grepl(pattern = 3900, x = loki_tissue_summer$WGC_4digit))
+sum(grepl(pattern = 3894, x = loki_tissue_summer$WGC_4digit))
 ```
 
 One card is completely missing. After reviewing Iris' summary, there is 3903-3906, which one got miscoded?
 ```{r}
 asl_summer %>% 
   filter(`Dna Specimen No` >= 390000 & `Dna Specimen No` <= 390610) %>% 
-  arrange(`Dna Specimen No`)
+  count(WGC_4digit)
 ```
 
 Looks like 3904 is the 3900 incident.
@@ -1903,36 +1972,43 @@ summer_torun_asl_mod <- summer_torun_asl %>%
   mutate(`Dna Specimen No` = as.numeric(str_replace(string = as.character(`Dna Specimen No`), pattern = "3900", replacement = "3904")))
 ```
 
-As for fish 205106, it looks like we only have 9 in LOKI from that Whatman card, how many did we want to extract?
+As for fish 243207, it looks like we only have 9 in LOKI from that Whatman card, how many did we want to extract?
 ```{r}
-summer_torun_asl[grep(pattern = 2051, x = summer_torun_asl$`Dna Specimen No`), ] %>% 
+summer_torun_asl[grep(pattern = 243207, x = summer_torun_asl$`Dna Specimen No`), ] %>% 
   arrange(`Dna Specimen No`)
 ```
 
-Looks like we wanted 7 total, so we can just drop 205106 and replace with another one.
+Looks like we wanted 1 total, so we can just drop 243207 and replace with another one.
 ```{r}
 summer_torun_asl_mod <- summer_torun_asl_mod %>% 
-  filter(`Dna Specimen No` != 205106) %>% 
-  bind_rows(filter(asl_summer, `Dna Specimen No` == 205105))
+  filter(`Dna Specimen No` != 243207) %>% 
+  bind_rows(filter(asl_summer, `Dna Specimen No` == 243206))
 ```
 
-As for fish 224010, it looks like we only have 8 in LOKI from that Whatman card, how many did we want to extract?
+As for fish 224003, it looks like we only have 9 in LOKI from that Whatman card, how many did we want to extract?
 ```{r}
 summer_torun_asl[grep(pattern = 2240, x = summer_torun_asl$`Dna Specimen No`), ] %>% 
   arrange(`Dna Specimen No`)
 ```
 
-Does 224005 exist in LOKI?
-```{r}
-grep(pattern = "2240", x = loki_tissue_summer$dna_specimen_no, value = TRUE)
-```
-
-
-Looks like we wanted 8 total, so we can just drop 224010 and replace with another one.
+Looks like we wanted 7 total, so we can just drop 243207 and replace with another one.
 ```{r}
 summer_torun_asl_mod <- summer_torun_asl_mod %>% 
-  filter(`Dna Specimen No` != 224010) %>% 
-  bind_rows(filter(asl_summer, `Dna Specimen No` == 224005))
+  filter(`Dna Specimen No` != 224003) %>% 
+  bind_rows(filter(asl_summer, `Dna Specimen No` == 224001))
+```
+
+As for fish 389409, it looks like we only have 9 in LOKI from that Whatman card, how many did we want to extract?
+```{r}
+summer_torun_asl[grep(pattern = 3894, x = summer_torun_asl$`Dna Specimen No`), ] %>% 
+  arrange(`Dna Specimen No`)
+```
+
+Looks like we wanted 3 total, so we can just drop 389409 and replace with another one.
+```{r}
+summer_torun_asl_mod <- summer_torun_asl_mod %>% 
+  filter(`Dna Specimen No` != 389409) %>% 
+  bind_rows(filter(asl_summer, `Dna Specimen No` == 389407))
 ```
 
 Now is everything in LOKI?
@@ -1940,77 +2016,9 @@ Now is everything in LOKI?
 table(summer_torun_asl_mod$`Dna Specimen No` %in% loki_tissue_summer$dna_specimen_no)
 ```
 
-### Duplicates
-Any duplicates?
-```{r}
-table(table(loki_tissue_summer$dna_specimen_no))
-table(table(summer_torun_asl_mod$`Dna Specimen No`))
-```
-
-```{r}
-loki_dups <- loki_tissue_summer %>% 
-  count(dna_specimen_no) %>% 
-  filter(n > 1) %>% 
-  pull(dna_specimen_no)
-
-loki_tissue_summer %>% 
-  filter(dna_specimen_no %in% loki_dups)
-```
-
-
-Shit, I need to fix these LOKI duplicate dna_specimen_no before doing anything else.
-```{r}
-summer_torun_asl_mod %>% 
-  filter(`Dna Specimen No` %in% loki_dups)
-```
-
-
-
-
-
-
-
-
-
-
-
-
-Shit, looks like one fish selected for extraction have the same Dna Specimen No, which are they?
-```{r}
-summer_torun_asl_mod %>% 
-  count(`Dna Specimen No`) %>% 
-  filter(n > 1)
-```
-
-Where are they from?
-```{r}
-summer_torun_asl_mod %>% 
-  filter(`Dna Specimen No` == 420402)
-```
-
-Any more fish on these cards?
-```{r}
-summer_torun_asl_mod[grep(pattern = 4204, x = summer_torun_asl_mod$`Dna Specimen No`), ]
-```
-
-After reviewing Iris' sample summary sheets, 445601 is the Summer Ret 1 fish from 171, Juneau, SW 47. The Summer Ret 2 fish from 171, Juneau, SW10 should be 645601.
-
-```{r}
-(summer_torun_asl_mod <- summer_torun_asl_mod %>% 
-   mutate(`Dna Specimen No` = case_when(`Stat Week` == 10 & `Dna Specimen No` == 445602 ~ 645602,
-                                        `Stat Week` == 10 & `Dna Specimen No` == 445601 ~ 645601,
-                                        TRUE ~ `Dna Specimen No`))
-)
-```
-
-Any duplicates now?
+And still no duplicates?
 ```{r}
 table(table(summer_torun_asl_mod$`Dna Specimen No`))
-```
-
-And everything still in LOKI?
-```{r}
-all(summer_torun_asl_mod$`Dna Specimen No` %in% loki_tissue_summer$dna_specimen_no)
 ```
 
 Excellent, all present and accounted for. Verify that we have the correct numbers of fish per fishery/quadrant
@@ -2019,6 +2027,12 @@ summer_torun_asl_mod %>%
   count(Fishery, Quadrant) %>% 
   spread(Quadrant, n, fill = 0)
 ```
+
+Victory is mine!!!
+```{r}
+save_objects(objects = "summer_torun_asl_mod", path = "../Objects/")
+```
+
 
 ### Format
 
