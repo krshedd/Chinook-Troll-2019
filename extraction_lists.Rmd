@@ -2057,6 +2057,7 @@ summer_torun_extraction %>%
   count(SILLY, `TISSUE TYPE`)
 ```
 
+
 # Spring Troll
 
 Mon Oct 21 13:25:12 2019
@@ -2104,7 +2105,7 @@ asl_spring %>%
 
 ### Visualize ASL
 
-Samples by month and stat area
+Samples by Month and Stat Area
 ```{r, fig.width=8, fig.height=10}
 asl_spring %>% 
   filter(Fishery == "Spring" & Year == "2019") %>%
@@ -2117,7 +2118,7 @@ asl_spring %>%
   ggtitle("Samples by Stat Week and Stat Area for Spring AY19")
 ```
 
-Samples by month and stat area
+Samples by Month and Quadrant
 ```{r, fig.width=8}
 asl_spring %>% 
   filter(Fishery == "Spring" & Year == "2019") %>%
@@ -2130,6 +2131,7 @@ asl_spring %>%
   ggtitle("Samples by Stat Week and Quadrant for Spring AY19")
 ```
 
+Sample sizes by Month and Quadrant for the planning spreadsheet.
 ```{r}
 asl_spring %>% 
   filter(Fishery == "Spring" & Year == "2019") %>%
@@ -2137,6 +2139,28 @@ asl_spring %>%
   count(Year_f, Quadrant, Fishery, Month) %>% 
   spread(Quadrant, n, fill = 0)
 ```
+
+### Read Tissue Table from *LOKI*
+Excellent! Next we'll pull tissue collection info from OceanAK and join, need full 10 digit WGC number and Sample number
+```{r}
+(loki_tissue_spring <- read_csv(file = "../OceanAK/GEN_SAMPLED_FISH_TISSUE_KTROL19SP.csv") %>% 
+   filter(is.na(IS_MISSING_PAIRED_DATA_EXISTS)) %>%  # make sure we aren't issing the tissue
+   select(`Silly Code`, FK_FISH_ID, DNA_TRAY_CODE, DNA_TRAY_WELL_CODE, PK_TISSUE_TYPE) %>% 
+   mutate(WGC_4digit = str_sub(DNA_TRAY_CODE, 7, 10)) %>% 
+   mutate(WGC_2digit_pos = str_pad(string = DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = 0)) %>% 
+   unite(dna_specimen_no, c(WGC_4digit, WGC_2digit_pos), sep = '', remove = FALSE) %>% 
+   mutate(dna_specimen_no = as.integer(dna_specimen_no))
+)
+```
+
+### Duplicates in Dna Specimen Number
+Any duplicates in *LOKI* or ASL?
+```{r}
+table(table(loki_tissue_spring$dna_specimen_no))
+table(table(asl_spring$`Dna Specimen No`))
+```
+
+By good grace of Allah, there are no duplicate Dna Specimen No!
 
 ## Harvest Data
 
@@ -2236,8 +2260,26 @@ join_spring %>%
   filter(n > Harvest)  # should be 0 rows...
 ```
 
-### Plot ASL samples and harvest as proportions by fishery
+```{r}
+join_spring %>% 
+  group_by(`Stat Area`, Month) %>% 
+  summarise(n = sum(n, na.rm = TRUE), Harvest = sum(Harvest, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  select(-n) %>% 
+  spread(Month, Harvest, fill = 0) %>% 
+  mutate(Total = May + June)
 
+join_spring %>% 
+  group_by(`Stat Area`, Month) %>% 
+  summarise(n = sum(n, na.rm = TRUE), Harvest = sum(Harvest, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  select(-Harvest) %>% 
+  spread(Month, n, fill = 0) %>% 
+  mutate(Total = May + June)
+```
+
+
+### Plot ASL samples and harvest as proportions by fishery
 
 ```{r fig.width=8, fig.height=10}
 join_spring %>% 
@@ -2254,3 +2296,981 @@ join_spring %>%
 ```
 
 
+## Spring Selection
+
+The plan for extraction is to pick , with the important caveat of subsampling in proportion to harvest by SW for each quadrant.
+
+**Business rule** is to take fish from within 1 SW on either side to fill in for missing.
+
+### 101-45 June
+
+Plan is to subsample ~200 fish. What would proportional sampling look like?
+```{r}
+n_sub <- 200
+
+(extraction_10145_june <- join_spring %>% 
+   filter(`Stat Area` == "10145" & Month == "June") %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * n_sub)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Adjust *n_extract* to fill in stat week 26 with fish from stat week 25 according to our business rule of +/- 1 week.
+```{r}
+(extraction_10145_june <- extraction_10145_june %>% 
+   mutate(n_extract = case_when(`Stat Week` == 25 ~ 88,
+                                TRUE ~ n_extract)) %>%
+   select(`Stat Area`, Month, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_spring %>% 
+  filter(`Stat Area` == "10145" & Month == "June") %>% 
+  full_join(extraction_10145_june, by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for Spring AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+june_10145_torun <- asl_spring %>% 
+  filter(`Stat Area` == "10145" & Month == "June") %>% 
+  nest(-`Stat Week`, -Month, - `Stat Area`) %>% 
+  right_join(extraction_10145_june, by = c("Stat Week", "Month", "Stat Area")) %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify picked fish
+```{r}
+june_10145_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 101-46 June
+
+Plan is to subsample ~174 (all) fish. What would proportional sampling look like?
+```{r}
+n_sub <- 174
+
+(extraction_10146_june <- join_spring %>% 
+   filter(`Stat Area` == "10146" & Month == "June") %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * n_sub)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Adjust *n_extract* to run all fish, according to our business rule of +/- 1 week.
+```{r}
+(extraction_10146_june <- extraction_10146_june %>% 
+   mutate(n_extract = n) %>%
+   select(`Stat Area`, Month, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_spring %>% 
+  filter(`Stat Area` == "10146" & Month == "June") %>% 
+  full_join(extraction_10146_june, by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for Spring AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+june_10146_torun <- asl_spring %>% 
+  filter(`Stat Area` == "10146" & Month == "June") %>% 
+  nest(-`Stat Week`, -Month, - `Stat Area`) %>% 
+  right_join(extraction_10146_june, by = c("Stat Week", "Month", "Stat Area")) %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify picked fish
+```{r}
+june_10146_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 103-50 May
+
+Plan is to subsample ~200 fish if possible. What would proportional sampling look like?
+```{r}
+n_sub <- 120
+
+(extraction_10350_may <- join_spring %>% 
+   filter(`Stat Area` == "10350" & Month == "May") %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * n_sub)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Adjust *n_extract* to fill in stat week 22 with fish from stat week 21 according to our business rule of +/- 1 week.
+```{r}
+(extraction_10350_may <- extraction_10350_may %>% 
+   mutate(n_extract = case_when(`Stat Week` == 21 ~ 44,
+                                TRUE ~ n_extract)) %>%
+   select(`Stat Area`, Month, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_spring %>% 
+  filter(`Stat Area` == "10350" & Month == "May") %>% 
+  full_join(extraction_10350_may, by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for Spring AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+may_10350_torun <- asl_spring %>% 
+  filter(`Stat Area` == "10350" & Month == "May") %>% 
+  nest(-`Stat Week`, -Month, - `Stat Area`) %>% 
+  right_join(extraction_10350_may, by = c("Stat Week", "Month", "Stat Area")) %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify picked fish
+```{r}
+may_10350_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 103-50 June
+
+Plan is to subsample ~64 (all) fish if possible. What would proportional sampling look like?
+```{r}
+n_sub <- 58
+
+(extraction_10350_june <- join_spring %>% 
+   filter(`Stat Area` == "10350" & Month == "June") %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * n_sub)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+No need to adjust *n_extract*.
+```{r}
+(extraction_10350_june <- extraction_10350_june %>% 
+   select(`Stat Area`, Month, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_spring %>% 
+  filter(`Stat Area` == "10350" & Month == "June") %>% 
+  full_join(extraction_10350_june, by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for Spring AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+june_10350_torun <- asl_spring %>% 
+  filter(`Stat Area` == "10350" & Month == "June") %>% 
+  nest(-`Stat Week`, -Month, - `Stat Area`) %>% 
+  right_join(extraction_10350_june, by = c("Stat Week", "Month", "Stat Area")) %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify picked fish
+```{r}
+june_10350_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 113-01 June
+
+Plan is to subsample ~100 fish. What would proportional sampling look like?
+```{r}
+n_sub <- 99.9
+
+(extraction_11301_june <- join_spring %>% 
+   filter(`Stat Area` == "11301" & Month == "June") %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * n_sub)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+No need to adjust *n_extract*.
+```{r}
+(extraction_11301_june <- extraction_11301_june %>% 
+   select(`Stat Area`, Month, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_spring %>% 
+  filter(`Stat Area` == "11301" & Month == "June") %>% 
+  full_join(extraction_11301_june, by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for Spring AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+june_11301_torun <- asl_spring %>% 
+  filter(`Stat Area` == "11301" & Month == "June") %>% 
+  nest(-`Stat Week`, -Month, - `Stat Area`) %>% 
+  right_join(extraction_11301_june, by = c("Stat Week", "Month", "Stat Area")) %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify picked fish
+```{r}
+june_11301_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 113-30 May
+
+Plan is to subsample ~100 fish if possible. What would proportional sampling look like?
+```{r}
+n_sub <- 100
+
+(extraction_11330_may <- join_spring %>% 
+   filter(`Stat Area` == "11330" & Month == "May") %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * n_sub)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+No need to adjust *n_extract*.
+```{r}
+(extraction_11330_may <- extraction_11330_may %>% 
+   select(`Stat Area`, Month, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_spring %>% 
+  filter(`Stat Area` == "11330" & Month == "May") %>% 
+  full_join(extraction_11330_may, by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for Spring AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+may_11330_torun <- asl_spring %>% 
+  filter(`Stat Area` == "11330" & Month == "May") %>% 
+  nest(-`Stat Week`, -Month, - `Stat Area`) %>% 
+  right_join(extraction_11330_may, by = c("Stat Week", "Month", "Stat Area")) %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify picked fish
+```{r}
+may_11330_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 113-30 June
+
+Plan is to subsample ~59 (all) fish if possible. What would proportional sampling look like?
+```{r}
+n_sub <- 40
+
+(extraction_11330_june <- join_spring %>% 
+   filter(`Stat Area` == "11330" & Month == "June") %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * n_sub)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Adjust *n_extract* to fill in stat week 23 with fish from stat week 24 according to our business rule of +/- 1 week.
+```{r}
+(extraction_11330_june <- extraction_11330_june %>% 
+   mutate(n_extract = case_when(`Stat Week` == 24 ~ 7,
+                                TRUE ~ n_extract)) %>%
+   select(`Stat Area`, Month, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_spring %>% 
+  filter(`Stat Area` == "11330" & Month == "June") %>% 
+  full_join(extraction_11330_june, by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for Spring AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+june_11330_torun <- asl_spring %>% 
+  filter(`Stat Area` == "11330" & Month == "June") %>% 
+  nest(-`Stat Week`, -Month, - `Stat Area`) %>% 
+  right_join(extraction_11330_june, by = c("Stat Week", "Month", "Stat Area")) %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify picked fish
+```{r}
+june_11330_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 113-41 May
+
+Plan is to subsample ~200 fish if possible. What would proportional sampling look like?
+```{r}
+n_sub <- 200
+
+(extraction_11341_may <- join_spring %>% 
+   filter(`Stat Area` == "11341" & Month == "May") %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * n_sub)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+No need to adjust *n_extract*.
+```{r}
+(extraction_11341_may <- extraction_11341_may %>% 
+   select(`Stat Area`, Month, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_spring %>% 
+  filter(`Stat Area` == "11341" & Month == "May") %>% 
+  full_join(extraction_11341_may, by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for Spring AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+may_11341_torun <- asl_spring %>% 
+  filter(`Stat Area` == "11341" & Month == "May") %>% 
+  nest(-`Stat Week`, -Month, - `Stat Area`) %>% 
+  right_join(extraction_11341_may, by = c("Stat Week", "Month", "Stat Area")) %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify picked fish
+```{r}
+may_11341_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 113-41 June
+
+Plan is to subsample ~200 fish if possible. What would proportional sampling look like?
+```{r}
+n_sub <- 200
+
+(extraction_11341_june <- join_spring %>% 
+   filter(`Stat Area` == "11341" & Month == "June") %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * n_sub)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+No need to adjust *n_extract*.
+```{r}
+(extraction_11341_june <- extraction_11341_june %>% 
+   select(`Stat Area`, Month, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_spring %>% 
+  filter(`Stat Area` == "11341" & Month == "June") %>% 
+  full_join(extraction_11341_june, by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for Spring AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+june_11341_torun <- asl_spring %>% 
+  filter(`Stat Area` == "11341" & Month == "June") %>% 
+  nest(-`Stat Week`, -Month, - `Stat Area`) %>% 
+  right_join(extraction_11341_june, by = c("Stat Week", "Month", "Stat Area")) %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify picked fish
+```{r}
+june_11341_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 113-62 May
+
+Plan is to subsample ~100 fish if possible. What would proportional sampling look like?
+```{r}
+n_sub <- 100
+
+(extraction_11362_may <- join_spring %>% 
+   filter(`Stat Area` == "11362" & Month == "May") %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * n_sub)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+Adjust *n_extract* to fill in stat week 20 with fish from stat week 19 and 21 according to our business rule of +/- 1 week.
+```{r}
+(extraction_11362_may <- extraction_11362_may %>% 
+   mutate(n_extract = case_when(`Stat Week` == 19 ~ 16,
+                                `Stat Week` == 21 ~ 28,
+                                TRUE ~ n_extract)) %>%
+   select(`Stat Area`, Month, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_spring %>% 
+  filter(`Stat Area` == "11362" & Month == "May") %>% 
+  full_join(extraction_11362_may, by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for Spring AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+may_11362_torun <- asl_spring %>% 
+  filter(`Stat Area` == "11362" & Month == "May") %>% 
+  nest(-`Stat Week`, -Month, - `Stat Area`) %>% 
+  right_join(extraction_11362_may, by = c("Stat Week", "Month", "Stat Area")) %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify picked fish
+```{r}
+may_11362_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 113-62 June
+
+Plan is to subsample ~200 fish if possible. What would proportional sampling look like?
+```{r}
+n_sub <- 200
+
+(extraction_11362_june <- join_spring %>% 
+   filter(`Stat Area` == "11362" & Month == "June") %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * n_sub)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+No need to adjust *n_extract*.
+```{r}
+(extraction_11362_june <- extraction_11362_june %>% 
+   select(`Stat Area`, Month, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_spring %>% 
+  filter(`Stat Area` == "11362" & Month == "June") %>% 
+  full_join(extraction_11362_june, by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for Spring AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+june_11362_torun <- asl_spring %>% 
+  filter(`Stat Area` == "11362" & Month == "June") %>% 
+  nest(-`Stat Week`, -Month, - `Stat Area`) %>% 
+  right_join(extraction_11362_june, by = c("Stat Week", "Month", "Stat Area")) %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify picked fish
+```{r}
+june_11362_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 183-10 May
+
+Plan is to subsample ~100 fish if possible. What would proportional sampling look like?
+```{r}
+n_sub <- 100
+
+(extraction_18310_may <- join_spring %>% 
+   filter(`Stat Area` == "18310" & Month == "May") %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * n_sub)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+No need to adjust *n_extract*.
+```{r}
+(extraction_18310_may <- extraction_18310_may %>% 
+   select(`Stat Area`, Month, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_spring %>% 
+  filter(`Stat Area` == "18310" & Month == "May") %>% 
+  full_join(extraction_18310_may, by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for Spring AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+may_18310_torun <- asl_spring %>% 
+  filter(`Stat Area` == "18310" & Month == "May") %>% 
+  nest(-`Stat Week`, -Month, - `Stat Area`) %>% 
+  right_join(extraction_18310_may, by = c("Stat Week", "Month", "Stat Area")) %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify picked fish
+```{r}
+may_18310_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### 183-10 June
+
+Plan is to subsample ~100 fish if possible. What would proportional sampling look like?
+```{r}
+n_sub <- 100
+
+(extraction_18310_june <- join_spring %>% 
+   filter(`Stat Area` == "18310" & Month == "June") %>% 
+   arrange(`Stat Week`) %>% 
+   mutate(pHarvest = round(Harvest / sum(Harvest) * n_sub)) %>%  # if we want XXX samples proportional to harvest by SW
+   mutate(n_sufficeint = n >= pHarvest) %>% 
+   mutate(n_remainings = n - pHarvest) %>% 
+   mutate(n_extract = pmin(n, pHarvest))
+)
+```
+
+No need to adjust *n_extract*.
+```{r}
+(extraction_18310_june <- extraction_18310_june %>% 
+   select(`Stat Area`, Month, `Stat Week`, n_extract) %>% 
+   rename(n = n_extract) %>% 
+   filter(n > 0)  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+)
+```
+
+Does our subsampling make the fish we are planning to extract more representative of harvest than the original sampling?
+```{r}
+join_spring %>% 
+  filter(`Stat Area` == "18310" & Month == "June") %>% 
+  full_join(extraction_18310_june, by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for Spring AY19") +
+  theme_bw()
+```
+
+Randomly pick fish per week
+```{r}
+june_18310_torun <- asl_spring %>% 
+  filter(`Stat Area` == "18310" & Month == "June") %>% 
+  nest(-`Stat Week`, -Month, - `Stat Area`) %>% 
+  right_join(extraction_18310_june, by = c("Stat Week", "Month", "Stat Area")) %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify picked fish
+```{r}
+june_18310_torun %>% 
+  count(`Stat Week`) %>% 
+  mutate(total = sum(n))
+```
+
+### Spring Extraction
+
+Combine in to a single tibble.
+```{r}
+spring_torun_asl <-
+  bind_rows(lapply(c(
+    grep(pattern = "may", x = objects(pattern = "torun"), value = TRUE),
+    grep(pattern = "june", x = objects(pattern = "torun"), value = TRUE)
+  ), get))
+
+spring_torun_asl %>% 
+  count(`Stat Area`, Month) %>% 
+  spread(Month, n, fill = 0)
+
+save_objects("spring_torun_asl", path = "../Objects")
+```
+
+Plot proportions for May...
+```{r fig.width=8}
+join_spring %>% 
+  filter(Month == "May") %>% 
+  full_join(spring_torun_asl %>% filter(Month == "May") %>% count(`Stat Area`, Month,`Stat Week`), by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  replace_na(list(n_sample = 0, n_extract = 0, Harvest = 0)) %>%  # replace NA in samples and harvest with 0
+  group_by(`Stat Area`) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for May AY19") +
+  theme_bw()
+```
+
+... and June
+```{r fig.width=8, fig.height=10}
+join_spring %>% 
+  filter(Month == "June") %>% 
+  full_join(spring_torun_asl %>% filter(Month == "June") %>% count(`Stat Area`, Month,`Stat Week`), by = c("Stat Area", "Month", "Stat Week"), suffix = c("_sample", "_extract")) %>% 
+  replace_na(list(n_sample = 0, n_extract = 0, Harvest = 0)) %>%  # replace NA in samples and harvest with 0
+  group_by(`Stat Area`) %>% 
+  mutate(n_extract = n_extract / sum(n_extract, na.rm = TRUE), 
+         n_sample = n_sample / sum(n_sample, na.rm = TRUE), 
+         Harvest = Harvest / sum(Harvest, na.rm = TRUE)) %>% 
+  gather(variable, proportion, -`Stat Week`, -Month, -`Stat Area`) %>% 
+  ggplot(aes(x = `Stat Week`, y = proportion, fill = variable)) +
+  geom_col() +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  facet_grid(`Stat Area` ~ variable, scales = "fixed") +
+  ggtitle("Extraction and Harvest by Stat Week and Stat Area for June AY19") +
+  theme_bw()
+```
+
+## Write Spring Extraction List
+
+We already dealt with duplicate issues at the beginning, so now we should just have to see if all of our ASL fish exist in OceanAK.
+
+### Compare with *LOKI*
+Are all my extraction fish in the LOKI tissue table?
+```{r}
+table(spring_torun_asl$`Dna Specimen No` %in% loki_tissue_spring$dna_specimen_no)
+```
+
+### Resolve Discrepancies
+Looks like we are missing 14 fish..., but which ones???
+```{r}
+missing_fish <- sort(setdiff(spring_torun_asl$`Dna Specimen No`, loki_tissue_spring$dna_specimen_no))
+
+spring_torun_asl %>% 
+  filter(`Dna Specimen No` %in% missing_fish) %>% 
+  select(`Stat Area`, Month, `Stat Week`, `Dna Specimen No`)
+```
+
+Do these two Whatman cards exist in LOKI?
+```{r}
+sum(grepl(pattern = 2432, x = loki_tissue_spring$WGC_4digit))
+sum(grepl(pattern = 2240, x = loki_tissue_spring$WGC_4digit))
+sum(grepl(pattern = 3900, x = loki_tissue_spring$WGC_4digit))
+sum(grepl(pattern = 3894, x = loki_tissue_spring$WGC_4digit))
+```
+
+One card is completely missing. After reviewing Iris' summary, there is 3903-3906, which one got miscoded?
+```{r}
+asl_spring %>% 
+  filter(`Dna Specimen No` >= 390000 & `Dna Specimen No` <= 390610) %>% 
+  count(WGC_4digit)
+```
+
+Looks like 3904 is the 3900 incident.
+
+I decided to forgo checking the physical Whatman card, we are just going to make this change. I'll modify those `Dna Specimen No` now.
+```{r}
+spring_torun_asl_mod <- spring_torun_asl %>% 
+  mutate(`Dna Specimen No` = as.numeric(str_replace(string = as.character(`Dna Specimen No`), pattern = "3900", replacement = "3904")))
+```
+
+As for fish 243207, it looks like we only have 9 in LOKI from that Whatman card, how many did we want to extract?
+```{r}
+spring_torun_asl[grep(pattern = 243207, x = spring_torun_asl$`Dna Specimen No`), ] %>% 
+  arrange(`Dna Specimen No`)
+```
+
+Looks like we wanted 1 total, so we can just drop 243207 and replace with another one.
+```{r}
+spring_torun_asl_mod <- spring_torun_asl_mod %>% 
+  filter(`Dna Specimen No` != 243207) %>% 
+  bind_rows(filter(asl_spring, `Dna Specimen No` == 243206))
+```
+
+As for fish 224003, it looks like we only have 9 in LOKI from that Whatman card, how many did we want to extract?
+```{r}
+spring_torun_asl[grep(pattern = 2240, x = spring_torun_asl$`Dna Specimen No`), ] %>% 
+  arrange(`Dna Specimen No`)
+```
+
+Looks like we wanted 7 total, so we can just drop 243207 and replace with another one.
+```{r}
+spring_torun_asl_mod <- spring_torun_asl_mod %>% 
+  filter(`Dna Specimen No` != 224003) %>% 
+  bind_rows(filter(asl_spring, `Dna Specimen No` == 224001))
+```
+
+As for fish 389409, it looks like we only have 9 in LOKI from that Whatman card, how many did we want to extract?
+```{r}
+spring_torun_asl[grep(pattern = 3894, x = spring_torun_asl$`Dna Specimen No`), ] %>% 
+  arrange(`Dna Specimen No`)
+```
+
+Looks like we wanted 3 total, so we can just drop 389409 and replace with another one.
+```{r}
+spring_torun_asl_mod <- spring_torun_asl_mod %>% 
+  filter(`Dna Specimen No` != 389409) %>% 
+  bind_rows(filter(asl_spring, `Dna Specimen No` == 389407))
+```
+
+Now is everything in LOKI?
+```{r}
+table(spring_torun_asl_mod$`Dna Specimen No` %in% loki_tissue_spring$dna_specimen_no)
+```
+
+And still no duplicates?
+```{r}
+table(table(spring_torun_asl_mod$`Dna Specimen No`))
+```
+
+Excellent, all present and accounted for. Verify that we have the correct numbers of fish per fishery/quadrant
+```{r}
+spring_torun_asl_mod %>% 
+  count(Fishery, Quadrant) %>% 
+  spread(Quadrant, n, fill = 0)
+```
+
+Victory is mine!!!
+```{r}
+save_objects(objects = "spring_torun_asl_mod", path = "../Objects/")
+```
+
+
+### Format
+
+Join LOKI Tissue Table with ASL and format for Extraction List Template
+```{r}
+(spring_torun_extraction <- spring_torun_asl_mod %>% 
+   left_join(loki_tissue_spring, by = c(`Dna Specimen No` = "dna_specimen_no")) %>% 
+   mutate(`WELL CODE` = str_pad(DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = 0)) %>% 
+   mutate(`TISSUE TYPE` = str_replace(PK_TISSUE_TYPE, pattern = " Process", replacement = "")) %>% 
+   mutate(`TISSUE TYPE` = str_replace(`TISSUE TYPE`, pattern = " Clip", replacement = "")) %>% 
+   rename(SILLY = `Silly Code`, `SAMPLE #` = FK_FISH_ID, `WGC BARCODE` = `DNA_TRAY_CODE`) %>% 
+   select(SILLY, `SAMPLE #`, `WGC BARCODE`, `WELL CODE`, `TISSUE TYPE`) %>% 
+   arrange(SILLY, `WGC BARCODE`, `WELL CODE`)
+)
+```
+
+### Write
+```{r}
+write_csv(spring_torun_extraction, path = "../Extraction Lists/Summer_Extraction.csv")
+
+spring_torun_extraction %>% 
+  count(SILLY, `TISSUE TYPE`)
+```
