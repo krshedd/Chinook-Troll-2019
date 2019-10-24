@@ -1,6 +1,9 @@
 ---
 title: "Chinook TBR 2019"
-output: html_notebook
+output:
+  html_notebook:
+    theme: united
+    toc: yes
 editor_options: 
   chunk_output_type: inline
 ---

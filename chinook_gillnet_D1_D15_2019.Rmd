@@ -1,0 +1,390 @@
+---
+title: "Chinook Gillnet D101 & 115 2019"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Introduction
+
+## Goals & Objectives
+
+The goal of this R Notebook is to analyze Chinook salmon mixtures from SEAK drift gillnet D101 and D115 fisheries in 2019. We have previously not looked in to these fisheries, as they target sockeye/chum, however, with stock of concern for Chilkat and Unuk + concerns about Nass/Skeena, it is worth investigating the incidental harvest of Chinook in these fisheries.
+
+  * D101 gillnet
+  * D115 gillnet
+
+## Outline
+
+This R Notebook will:
+
+1) Import mixture genotypes
+2) Join ASL
+3) Define mixture strata
+3) Data QA
+4) Create *BAYES* files
+5) Summarize *BAYES* results
+6) Output tables
+
+## Setup
+
+Load *GCL-R-Functions* and all necessary packages.
+```{r setup, message=FALSE, results='hide'}
+source("~/../R/Functions.GCL.R")
+library(tidyverse)
+
+.username <- "krshedd"
+.password <- ""
+```
+
+Read in those objects
+```{r load_objects}
+load_objects("../Objects/")
+```
+
+
+# Import mixture genotypes
+
+Create `LocusControl` and read in genotypes from *LOKI* as `.gcl` objects. Save in directory.
+```{r loki}
+gillnet_sillys <- c("KGILL19D1", "KGILL19D15")
+LOKI2R_GAPS.GCL(sillyvec = gillnet_sillys, username = .username, password = .password)
+rm(.username, .password)
+
+save_sillys(sillyvec = gillnet_sillys, path = "../Genotypes/original")
+save_objects(objects = c("gillnet_sillys"), path = "../Objects/")
+```
+
+# Join ASL
+
+## Gillnet
+
+Read ASL
+```{r}
+gill_ASL <- read_csv(file = "../ASL Data/20190822_Gillnet_D8_11_1_15_Detailed ASL Samples.csv")
+
+table(table(gill_ASL$`Dna Specimen No`))
+```
+
+Investigate duplicate Dna Specimen No
+```{r}
+gill_ASL_dups <- gill_ASL %>% 
+  mutate(`Dna Specimen No` = as.character(`Dna Specimen No`)) %>% 
+  count(`Dna Specimen No`) %>% 
+  filter(n > 1) %>% 
+  pull(`Dna Specimen No`)
+```
+
+Check for duplicates in D101
+```{r}
+as_tibble(KGILL19D1.gcl$attributes) %>% 
+  mutate(WGC_4digit = str_sub(string = DNA_TRAY_CODE, start = 7, end = 10)) %>% 
+  mutate(WGC_2digit = str_pad(string = DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = "0")) %>% 
+  unite(dna_specimen_no, c("WGC_4digit", "WGC_2digit"), sep = '') %>% 
+  filter(dna_specimen_no %in% gill_ASL_dups)
+```
+
+Check for duplicates in D115
+```{r}
+as_tibble(KGILL19D15.gcl$attributes) %>% 
+  mutate(WGC_4digit = str_sub(string = DNA_TRAY_CODE, start = 7, end = 10)) %>% 
+  mutate(WGC_2digit = str_pad(string = DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = "0")) %>% 
+  unite(dna_specimen_no, c("WGC_4digit", "WGC_2digit"), sep = '') %>% 
+  filter(dna_specimen_no %in% gill_ASL_dups)
+```
+
+### D101
+
+```{r D111_gill_asl, message=FALSE}
+# district and stat week counts
+KGILL19D1.gcl$attributes %>% 
+  mutate(`Dna Specimen No` = as.integer(paste0(str_sub(DNA_TRAY_CODE, 7, 10), str_pad(DNA_TRAY_WELL_CODE, 2, "left", "0")))) %>% 
+  left_join(filter(gill_ASL, District == 101), by = "Dna Specimen No") %>% 
+  count(District, `Stat Week`)
+```
+
+### D115
+
+```{r D108_gill_asl, message=FALSE}
+# district and stat week counts
+KGILL19D15.gcl$attributes %>% 
+  mutate(`Dna Specimen No` = as.integer(paste0(str_sub(DNA_TRAY_CODE, 7, 10), str_pad(DNA_TRAY_WELL_CODE, 2, "left", "0")))) %>% 
+  left_join(filter(gill_ASL, District == 115), by = "Dna Specimen No") %>% 
+  count(District, `Stat Week`)
+```
+
+# Define mixture strata
+
+Each District and gear type
+```{r}
+D101Gill_2019.gcl <- KGILL19D1.gcl
+D115Gill_2019.gcl <- KGILL19D15.gcl
+
+gillnet_mixnames <- c("D101Gill_2019", "D115Gill_2019")
+```
+
+Check sample sizes
+```{r}
+sapply(gillnet_mixnames, function(mix) {get(paste0(mix, ".gcl"))$n})
+```
+
+
+# Data QA
+
+Standard data QA:
+
+  * Remove fish missing <80% genotypes
+  * Remove duplicates (>95% genotype concordance)
+
+```{r QA}
+# original sample sizes
+gillnet_sample_sizes <- tibble(silly = gillnet_mixnames,
+                           genotyped = sapply(gillnet_mixnames, function(x) {get(paste0(x, ".gcl"))$n }))
+
+# missing
+gillnet_missing <- RemoveIndMissLoci.GCL(sillyvec = gillnet_mixnames, proportion = 0.8)
+save_objects("gillnet_missing", "../Objects/")
+
+gillnet_sample_sizes <- gillnet_sample_sizes %>% 
+  mutate(missing = genotyped - sapply(gillnet_mixnames, function(x) {get(paste0(x, ".gcl"))$n }))
+
+# duplicate
+gillnet_duplicates <- CheckDupWithinSilly.GCL(sillyvec = gillnet_mixnames, loci = GAPSLoci_reordered, quantile = NULL, minproportion = 0.95)
+gillnet_duplicates_summary <- sapply(gillnet_mixnames, function(x) {gillnet_duplicates[[x]]$report})
+gillnet_duplicates_summary
+save_objects("gillnet_duplicates_summary", "../Objects/")
+
+gillnet_duplciates_removed <- RemoveDups.GCL(dupcheck = gillnet_duplicates)
+
+gillnet_sample_sizes <- gillnet_sample_sizes %>% 
+  mutate(duplicate = genotyped - missing - sapply(gillnet_mixnames, function(x) {get(paste0(x, ".gcl"))$n }))
+
+# final
+gillnet_sample_sizes <- gillnet_sample_sizes %>% 
+  mutate(final = sapply(gillnet_mixnames, function(x) {get(paste0(x, ".gcl"))$n }))
+gillnet_sample_sizes
+save_objects("gillnet_sample_sizes", "../Objects/")
+
+write_csv(gillnet_sample_sizes, "../Tables/gillnet_sample_sizes.csv")
+```
+
+Save post-QA genotypes
+```{r post_QA}
+save_sillys(sillyvec = gillnet_mixnames, path = "../Genotypes/strata_postQA")
+```
+
+# Create *BAYES* files
+
+## Directory setup
+
+```{r BAYES_setup, results='hide'}
+save_objects("gillnet_mixnames", "../Objects/")
+```
+
+## Create mixtures
+
+Create gillnet *BAYES* mixture files.
+```{r BAYES_mixtures}
+sapply(gillnet_mixnames, function(mix) {
+  CreateMixture.GCL(sillys = mix, loci = GAPSLoci_reordered, IDs = NULL, mixname = mix, dir = "../BAYES/Mixture", type = "BAYES", PT = FALSE)
+} )
+```
+
+## Create priors
+
+New this year, as last year, I will be analyzing **ALL** Chinook mixtures with the full 33 reporting groups, including gillnet. However, since we have never run either of these mixtures before, what to do for a prior? Going with flat.
+
+My plan is to keep the same prior for the gillnet groups and then spread out the "Other" evenly across all other non-gillnet reporting groups.
+Now get 2018 esimates for Sport D111 + Gillnet 108 and 111
+```{r}
+flat_prior <- Prior.GCL(groupvec = GroupVec33RG_357, groupweights = rep(1/33, 33))
+save_objects("flat_prior", "../Objects/")
+```
+
+## Create control files
+
+Now that we have priors, just need to create *BAYES* control files.
+```{r BAYES_control}
+sapply(gillnet_mixnames, function(mix) {
+  CreateControlFile.GCL(
+    sillyvec = SEAKPops357,
+    loci = GAPSLoci_reordered,
+    mixname = mix,
+    basename = "GAPS357pops13loci",
+    suffix = "",
+    nreps = 40000,
+    nchains = 5,
+    groupvec = GroupVec33RG_357,
+    priorvec = flat_prior,
+    initmat = GAPS357PopsInits,
+    dir = "../BAYES/Control",
+    seeds = WASSIPSockeyeSeeds,
+    thin = c(1, 1, 100),
+    mixfortran = mixfortran,
+    basefortran = bayesfortran_357,
+    switches = "F T F T T T F"
+  )
+})
+```
+
+## Create output directories
+
+```{r BAYES_output}
+sapply(gillnet_mixnames, function(mix) {dir.create(paste0("../BAYES/Output/", mix))} )
+```
+
+# Summarize *BAYES* results
+
+Summarize results for both the full 33 reporting groups, the 5 gillnet groups, 3 gillnet groups, and 2 gillnet groups.
+
+## 33 reporting groups
+
+Create standard summary and tall tibble, save both.
+```{r BAYES_summarise_33RG}
+# full 33 reporting groups
+gillnet_2019_33RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = 1:33, groupnames = GroupNames33, maindir = "../BAYES/Output", mixvec = gillnet_mixnames,
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+# make in to a tidy tibble (tall)
+gillnet_2019_33RG_estimates.tdy <- 
+  bind_rows(
+    lapply(gillnet_mixnames, function(mix) {  # loop over mixture names
+      gillnet_2019_33RG_EstimatesStats[[mix]] %>%  # for each matrix
+        as_tibble(rownames = "group") %>%  # make tibble with rownames as group
+        mutate(mixname = mix) %>%  # make column for mixname
+        mutate(n_group = n_distinct(group))  # make column for number of groups
+    } )
+  ) %>% 
+  gather(estimator, value, -mixname, -group, - n_group) %>%  # gather all estimators
+  separate(mixname, c("mix", "year"), sep = "_", remove = FALSE) %>%  # extract mixture and year
+  separate(mix, c("district", "gear"), sep = 4) %>%  # extract district and gear
+  mutate(district = as.integer(str_sub(district, 2, 4))) %>%   # make district integer
+  mutate(estimator = factor(estimator, c("mean", "sd", "5%", "95%", "median", "P=0", "GR"))) %>%  # factor for ordering
+  mutate(group = factor(group, GroupNames33))  # factor for ordering
+
+save_objects(c("gillnet_2019_33RG_EstimatesStats", "gillnet_2019_33RG_estimates.tdy"), "../Estimates objects")
+```
+
+## 5 gillnet reporting groups
+
+Need to create a new groupvec to go from 33 reporting groups to the 5 gillnet reporting groups.
+```{r BAYES_summarise_5RG}
+gillnet_2019_5RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = GroupVec33RG_to5RG, groupnames = GroupNames5, maindir = "../BAYES/Output", mixvec = gillnet_mixnames,
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+# make in to a tidy tibble (tall)
+gillnet_2019_5RG_estimates.tdy <- 
+  bind_rows(
+    lapply(gillnet_mixnames, function(mix) {  # loop over mixture names
+      gillnet_2019_5RG_EstimatesStats[[mix]] %>%  # for each matrix
+        as_tibble(rownames = "group") %>%  # make tibble with rownames as group
+        mutate(mixname = mix) %>%  # make column for mixname
+        mutate(n_group = n_distinct(group))  # make column for number of groups
+    } )
+  ) %>% 
+  gather(estimator, value, -mixname, -group, - n_group) %>%  # gather all estimators
+  separate(mixname, c("mix", "year"), sep = "_", remove = FALSE) %>%  # extract mixture and year
+  separate(mix, c("district", "gear"), sep = 4) %>%  # extract district and gear
+  mutate(district = as.integer(str_sub(district, 2, 4))) %>%   # make district integer
+  mutate(estimator = factor(estimator, c("mean", "sd", "5%", "95%", "median", "P=0", "GR"))) %>%  # factor for ordering
+  mutate(group = factor(group, GroupNames5))  # factor for ordering
+
+save_objects(c("gillnet_2019_5RG_EstimatesStats", "gillnet_2019_5RG_estimates.tdy"), "../Estimates objects")
+
+write_csv(gillnet_2019_5RG_estimates.tdy, "../Estimates tables tidy/gillnet_2019_5RG_estimates.csv")
+```
+
+## 8 driver stock reporting groups
+
+Need to create a new groupvec to go from 33 reporting groups to the 3 gillnet reporting groups.
+```{r BAYES_summarise_3RG}
+gillnet_2019_8RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = GroupVec33RG_to8RG, groupnames = GroupNames8, maindir = "../BAYES/Output", mixvec = gillnet_mixnames,
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+# make in to a tidy tibble (tall)
+gillnet_2019_8RG_estimates.tdy <- 
+  bind_rows(
+    lapply(gillnet_mixnames, function(mix) {  # loop over mixture names
+      gillnet_2019_8RG_EstimatesStats[[mix]] %>%  # for each matrix
+        as_tibble(rownames = "group") %>%  # make tibble with rownames as group
+        mutate(mixname = mix) %>%  # make column for mixname
+        mutate(n_group = n_distinct(group))  # make column for number of groups
+    } )
+  ) %>% 
+  gather(estimator, value, -mixname, -group, - n_group) %>%  # gather all estimators
+  separate(mixname, c("mix", "year"), sep = "_", remove = FALSE) %>%  # extract mixture and year
+  separate(mix, c("district", "gear"), sep = 4) %>%  # extract district and gear
+  mutate(district = as.integer(str_sub(district, 2, 4))) %>%   # make district integer
+  mutate(estimator = factor(estimator, c("mean", "sd", "5%", "95%", "median", "P=0", "GR"))) %>%  # factor for ordering
+  mutate(group = factor(group, GroupNames8))  # factor for ordering
+
+save_objects(c("gillnet_2019_8RG_EstimatesStats", "gillnet_2019_8RG_estimates.tdy"), "../Estimates objects")
+```
+
+## 18 gillnet reporting groups
+
+Need to create a new groupvec to go from 33 reporting groups to the 2 gillnet reporting groups.
+```{r BAYES_summarise_2RG}
+gillnet_2019_18RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = GroupVec33RG_to18RG, groupnames = GroupNames18, maindir = "../BAYES/Output", mixvec = gillnet_mixnames,
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+# make in to a tidy tibble (tall)
+gillnet_2019_18RG_estimates.tdy <- 
+  bind_rows(
+    lapply(gillnet_mixnames, function(mix) {  # loop over mixture names
+      gillnet_2019_18RG_EstimatesStats[[mix]] %>%  # for each matrix
+        as_tibble(rownames = "group") %>%  # make tibble with rownames as group
+        mutate(mixname = mix) %>%  # make column for mixname
+        mutate(n_group = n_distinct(group))  # make column for number of groups
+    } )
+  ) %>% 
+  gather(estimator, value, -mixname, -group, - n_group) %>%  # gather all estimators
+  separate(mixname, c("mix", "year"), sep = "_", remove = FALSE) %>%  # extract mixture and year
+  separate(mix, c("district", "gear"), sep = 4) %>%  # extract district and gear
+  mutate(district = as.integer(str_sub(district, 2, 4))) %>%   # make district integer
+  mutate(estimator = factor(estimator, c("mean", "sd", "5%", "95%", "median", "P=0", "GR"))) %>%  # factor for ordering
+  mutate(group = factor(group, GroupNames18))  # factor for ordering
+
+save_objects(c("gillnet_2019_18RG_EstimatesStats", "gillnet_2019_18RG_estimates.tdy"), "../Estimates objects")
+```
+
+# Output tables
+
+## Gelman-Rubin
+
+Need to check Gelman-Rubin first to verify that all estimates are < 1.2 for 5 gillnet reporting groups.
+```{r GR_check}
+all(gillnet_2019_33RG_estimates.tdy %>% filter(estimator == "GR") %>% pull(value) < 1.2)
+```
+
+## Estimates
+
+Great, now that we know our data converged for the 5 gillnet reporting groups, we can summarise the tall, tidy, tibble for the summary spreadsheet for each mixture and reporting group combination.
+
+```{r 5RG_estimates}
+gillnet_2019_5RG_EstimatesStats
+```
+
+```{r}
+gillnet_sample_sizes
+```
+
+
+### Gill D101 33RG
+
+Show results where the upper bound of the 90% CI included 5%.
+```{r}
+sapply(gillnet_2019_33RG_EstimatesStats, function(x) {as_tibble(x = x, rownames = "group")}, simplify = FALSE) %>% 
+  bind_rows(.id = "mixname") %>% 
+  group_by(mixname) %>% 
+  filter(`95%` >= 0.05) %>% 
+  arrange(mixname, desc(mean))
+```
+
