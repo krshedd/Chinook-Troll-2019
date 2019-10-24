@@ -2069,7 +2069,8 @@ Spring troll is messy because we do things by Month and Stat Area
 Need to read in ASL data from Iris to get the District/Sub-District data.
 ### Read raw ASL
 ```{r}
-(asl_spring <- read_csv(file = "../Associated Data/Spring/2019 Spring Troll Chinook with Dist Sub Dist (version 1).csv"))
+(asl_spring <- read_csv(file = "../Associated Data/Spring/2019 Spring Troll Chinook with Dist Sub Dist (version 1).csv") %>% 
+   filter(!is.na(`Dna Specimen No`)))
 ```
 
 ### Manipulate ASL
@@ -2277,7 +2278,6 @@ join_spring %>%
   spread(Month, n, fill = 0) %>% 
   mutate(Total = May + June)
 ```
-
 
 ### Plot ASL samples and harvest as proportions by fishery
 
@@ -3164,31 +3164,87 @@ missing_fish <- sort(setdiff(spring_torun_asl$`Dna Specimen No`, loki_tissue_spr
 
 spring_torun_asl %>% 
   filter(`Dna Specimen No` %in% missing_fish) %>% 
-  select(`Stat Area`, Month, `Stat Week`, `Dna Specimen No`)
+  select(`Stat Area`, `Port Code`, Month, `Stat Week`, `Dna Specimen No`)
 ```
 
-Do these two Whatman cards exist in LOKI?
+Do these five Whatman cards exist in LOKI?
 ```{r}
-sum(grepl(pattern = 2432, x = loki_tissue_spring$WGC_4digit))
-sum(grepl(pattern = 2240, x = loki_tissue_spring$WGC_4digit))
-sum(grepl(pattern = 3900, x = loki_tissue_spring$WGC_4digit))
-sum(grepl(pattern = 3894, x = loki_tissue_spring$WGC_4digit))
+sum(grepl(pattern = 4969, x = loki_tissue_spring$WGC_4digit))
+sum(grepl(pattern = 2326, x = loki_tissue_spring$WGC_4digit))
+sum(grepl(pattern = 2571, x = loki_tissue_spring$WGC_4digit))
+sum(grepl(pattern = 5743, x = loki_tissue_spring$WGC_4digit))
+sum(grepl(pattern = 2004, x = loki_tissue_spring$WGC_4digit))
 ```
 
-One card is completely missing. After reviewing Iris' summary, there is 3903-3906, which one got miscoded?
+Two cards are completely missing. 
+
+After reviewing Iris' summary, it looks like 4969 is likely 4696. Verify 4696 not in ASL
 ```{r}
 asl_spring %>% 
-  filter(`Dna Specimen No` >= 390000 & `Dna Specimen No` <= 390610) %>% 
-  count(WGC_4digit)
+  filter(`Dna Specimen No` >= 469600 & `Dna Specimen No` <= 469611)
 ```
 
-Looks like 3904 is the 3900 incident.
+Verify that 4696 is in LOKI
+```{r}
+loki_tissue_spring %>% 
+  filter(WGC_4digit == 4696)
+```
+
+Verify that we can do a simple `str_replace`
+```{r}
+sum(grepl(pattern = "4969", x = spring_torun_asl$`Dna Specimen No`))
+```
+
+Looks like 4969 is the 4696 incident.
 
 I decided to forgo checking the physical Whatman card, we are just going to make this change. I'll modify those `Dna Specimen No` now.
 ```{r}
 spring_torun_asl_mod <- spring_torun_asl %>% 
-  mutate(`Dna Specimen No` = as.numeric(str_replace(string = as.character(`Dna Specimen No`), pattern = "3900", replacement = "3904")))
+  mutate(`Dna Specimen No` = as.numeric(str_replace(string = as.character(`Dna Specimen No`), pattern = "4969", replacement = "4696")))
 ```
+
+
+After reviewing Iris' summary, it looks like 5743 is likely 5473. Verify 5473 not in ASL
+```{r}
+asl_spring %>% 
+  filter(`Dna Specimen No` >= 547300 & `Dna Specimen No` <= 547311)
+```
+
+Verify that 5473 is in LOKI
+```{r}
+loki_tissue_spring %>% 
+  filter(WGC_4digit == 5473)
+```
+
+Verify that we can do a simple `str_replace`
+```{r}
+sum(grepl(pattern = "5743", x = spring_torun_asl$`Dna Specimen No`))
+```
+
+Looks like 5473 is the 5743 incident.
+
+I decided to forgo checking the physical Whatman card, we are just going to make this change. I'll modify those `Dna Specimen No` now.
+```{r}
+spring_torun_asl_mod <- spring_torun_asl %>% 
+  mutate(`Dna Specimen No` = as.numeric(str_replace(string = as.character(`Dna Specimen No`), pattern = "5743", replacement = "5473")))
+```
+
+
+
+I HAVE RESOLVED THE TWO CARDS THAT WERE MISLABELLED, STILL NEED TO RESOLVE THE OTHER 3 CARDS THAT APPEAR TO BE MISSING FISH!
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 As for fish 243207, it looks like we only have 9 in LOKI from that Whatman card, how many did we want to extract?
 ```{r}
