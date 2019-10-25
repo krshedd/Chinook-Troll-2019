@@ -3225,64 +3225,60 @@ Looks like 5473 is the 5743 incident.
 
 I decided to forgo checking the physical Whatman card, we are just going to make this change. I'll modify those `Dna Specimen No` now.
 ```{r}
-spring_torun_asl_mod <- spring_torun_asl %>% 
+spring_torun_asl_mod <- spring_torun_asl_mod %>% 
   mutate(`Dna Specimen No` = as.numeric(str_replace(string = as.character(`Dna Specimen No`), pattern = "5743", replacement = "5473")))
 ```
 
-
-
-I HAVE RESOLVED THE TWO CARDS THAT WERE MISLABELLED, STILL NEED TO RESOLVE THE OTHER 3 CARDS THAT APPEAR TO BE MISSING FISH!
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-As for fish 243207, it looks like we only have 9 in LOKI from that Whatman card, how many did we want to extract?
+Okay, now that we've resolved the two cards that were misidentified, we need to resolve the remaining four fish that appear to be missing
 ```{r}
-spring_torun_asl[grep(pattern = 243207, x = spring_torun_asl$`Dna Specimen No`), ] %>% 
+spring_torun_asl_mod %>% 
+  filter(`Dna Specimen No` %in% missing_fish) %>% 
+  select(`Stat Area`, `Port Code`, Month, `Stat Week`, `Dna Specimen No`)
+```
+
+How many fish are on these three Whatman cards in LOKI?
+```{r}
+sum(grepl(pattern = 2326, x = loki_tissue_spring$WGC_4digit))
+sum(grepl(pattern = 2571, x = loki_tissue_spring$WGC_4digit))
+sum(grepl(pattern = 2004, x = loki_tissue_spring$WGC_4digit))
+```
+
+Starting with 2326, how many did we want to extract?
+```{r}
+spring_torun_asl_mod[grep(pattern = 2326, x = spring_torun_asl_mod$`Dna Specimen No`), ] %>% 
   arrange(`Dna Specimen No`)
 ```
 
-Looks like we wanted 1 total, so we can just drop 243207 and replace with another one.
+Looks like wanted 5, and there are 5 in LOKI, we can just swap out 232606 for 232603
 ```{r}
 spring_torun_asl_mod <- spring_torun_asl_mod %>% 
-  filter(`Dna Specimen No` != 243207) %>% 
-  bind_rows(filter(asl_spring, `Dna Specimen No` == 243206))
+  filter(`Dna Specimen No` != 232606) %>% 
+  bind_rows(filter(asl_spring, `Dna Specimen No` == 232603))
 ```
 
-As for fish 224003, it looks like we only have 9 in LOKI from that Whatman card, how many did we want to extract?
+Now how about 2571?
 ```{r}
-spring_torun_asl[grep(pattern = 2240, x = spring_torun_asl$`Dna Specimen No`), ] %>% 
+spring_torun_asl_mod[grep(pattern = 2571, x = spring_torun_asl_mod$`Dna Specimen No`), ] %>% 
   arrange(`Dna Specimen No`)
 ```
 
-Looks like we wanted 7 total, so we can just drop 243207 and replace with another one.
+Looks like we wanted 2, and there are 7 in LOKI, we can just swap out 257113 and 257115 for 257103 and 257105
 ```{r}
 spring_torun_asl_mod <- spring_torun_asl_mod %>% 
-  filter(`Dna Specimen No` != 224003) %>% 
-  bind_rows(filter(asl_spring, `Dna Specimen No` == 224001))
+  mutate(`Dna Specimen No` = as.numeric(str_replace(string = as.character(`Dna Specimen No`), pattern = "25711", replacement = "25710")))
 ```
 
-As for fish 389409, it looks like we only have 9 in LOKI from that Whatman card, how many did we want to extract?
+Now how about 2004?
 ```{r}
-spring_torun_asl[grep(pattern = 3894, x = spring_torun_asl$`Dna Specimen No`), ] %>% 
+spring_torun_asl_mod[grep(pattern = 2004, x = spring_torun_asl_mod$`Dna Specimen No`), ] %>% 
   arrange(`Dna Specimen No`)
 ```
 
-Looks like we wanted 3 total, so we can just drop 389409 and replace with another one.
+Looks like we wanted 1, and there are 6 in LOKI, we can just swap out 200411 for 200404
 ```{r}
 spring_torun_asl_mod <- spring_torun_asl_mod %>% 
-  filter(`Dna Specimen No` != 389409) %>% 
-  bind_rows(filter(asl_spring, `Dna Specimen No` == 389407))
+  filter(`Dna Specimen No` != 200411) %>% 
+  bind_rows(filter(asl_spring, `Dna Specimen No` == 200404))
 ```
 
 Now is everything in LOKI?
@@ -3298,7 +3294,13 @@ table(table(spring_torun_asl_mod$`Dna Specimen No`))
 Excellent, all present and accounted for. Verify that we have the correct numbers of fish per fishery/quadrant
 ```{r}
 spring_torun_asl_mod %>% 
-  count(Fishery, Quadrant) %>% 
+  count(Month, `Stat Area`) %>% 
+  spread(Month, n, fill = 0)
+```
+
+```{r}
+spring_torun_asl_mod %>% 
+  count(Month, Quadrant) %>% 
   spread(Quadrant, n, fill = 0)
 ```
 
@@ -3325,7 +3327,7 @@ Join LOKI Tissue Table with ASL and format for Extraction List Template
 
 ### Write
 ```{r}
-write_csv(spring_torun_extraction, path = "../Extraction Lists/Summer_Extraction.csv")
+write_csv(spring_torun_extraction, path = "../Extraction Lists/Spring_Extraction.csv")
 
 spring_torun_extraction %>% 
   count(SILLY, `TISSUE TYPE`)
