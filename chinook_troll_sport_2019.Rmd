@@ -184,22 +184,45 @@ all(early_winter_samples %in% troll_ASL$`Dna Specimen No`)
 all(late_winter_samples %in% troll_ASL$`Dna Specimen No`)
 ```
 
+Now that we've resolved our ASL discrepancy, join with attributes to get quadrant level information.
+```{r join_winter_asl}
+# Join ASL with attributes table
+# Early Winter
+KTROL18EW.gcl$attributes <- KTROL18EW.gcl$attributes %>% 
+  mutate(`Dna Specimen No` = as.integer(paste0(str_sub(DNA_TRAY_CODE, 7, 10), str_pad(DNA_TRAY_WELL_CODE, 2, "left", "0")))) %>% 
+  left_join(asl_winter, by = "Dna Specimen No")
+
+# Late Winter
+KTROL19LW.gcl$attributes <- KTROL19LW.gcl$attributes %>% 
+  mutate(`Dna Specimen No` = as.integer(paste0(str_sub(DNA_TRAY_CODE, 7, 10), str_pad(DNA_TRAY_WELL_CODE, 2, "left", "0")))) %>% 
+  left_join(asl_winter, by = "Dna Specimen No")
+```
+
+How many fish per district?
+```{r winter_district_counts}
+KTROL18EW.gcl$attributes %>% 
+  count(Quadrant)
+
+KTROL19LW.gcl$attributes %>% 
+  count(Quadrant)
+```
+
 # Define mixture strata
 
 Winter mixtures are each quadrant by itself.
 
 Create early winter mixtures.
 ```{r early_winter_define_mixtures}
-EWintNO_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL18EW", attribute = "District", matching = 181)), nm = "KTROL18EW")
+EWintNO_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL18EW", attribute = "Quadrant", matching = 171)), nm = "KTROL18EW")
 PoolCollections.GCL(collections = "KTROL18EW", loci = GAPSLoci_reordered, IDs = EWintNO_2019.vials, newname = "EWintNO_2019")
 
-EWintSO_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL18EW", attribute = "District", matching = 182)), nm = "KTROL18EW")
+EWintSO_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL18EW", attribute = "Quadrant", matching = 172)), nm = "KTROL18EW")
 PoolCollections.GCL(collections = "KTROL18EW", loci = GAPSLoci_reordered, IDs = EWintSO_2019.vials, newname = "EWintSO_2019")
 
-EWintNI_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL18EW", attribute = "District", matching = 183)), nm = "KTROL18EW")
+EWintNI_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL18EW", attribute = "Quadrant", matching = 173)), nm = "KTROL18EW")
 PoolCollections.GCL(collections = "KTROL18EW", loci = GAPSLoci_reordered, IDs = EWintNI_2019.vials, newname = "EWintNI_2019")
 
-EWintSI_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL18EW", attribute = "District", matching = 184)), nm = "KTROL18EW")
+EWintSI_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL18EW", attribute = "Quadrant", matching = 174)), nm = "KTROL18EW")
 PoolCollections.GCL(collections = "KTROL18EW", loci = GAPSLoci_reordered, IDs = EWintSI_2019.vials, newname = "EWintSI_2019")
 
 sapply(grep(pattern = "EWint", objects(pattern = "\\.gcl"), value = TRUE), function(silly) {get(silly)$n})
@@ -207,16 +230,16 @@ sapply(grep(pattern = "EWint", objects(pattern = "\\.gcl"), value = TRUE), funct
 
 Create late winter mixtures.
 ```{r late_winter_define_mixtures}
-LWintNO_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL19LW", attribute = "District", matching = 181)), nm = "KTROL19LW")
+LWintNO_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL19LW", attribute = "Quadrant", matching = 171)), nm = "KTROL19LW")
 PoolCollections.GCL(collections = "KTROL19LW", loci = GAPSLoci_reordered, IDs = LWintNO_2019.vials, newname = "LWintNO_2019")
 
-LWintSO_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL19LW", attribute = "District", matching = 182)), nm = "KTROL19LW")
+LWintSO_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL19LW", attribute = "Quadrant", matching = 172)), nm = "KTROL19LW")
 PoolCollections.GCL(collections = "KTROL19LW", loci = GAPSLoci_reordered, IDs = LWintSO_2019.vials, newname = "LWintSO_2019")
 
-LWintNI_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL19LW", attribute = "District", matching = 183)), nm = "KTROL19LW")
+LWintNI_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL19LW", attribute = "Quadrant", matching = 173)), nm = "KTROL19LW")
 PoolCollections.GCL(collections = "KTROL19LW", loci = GAPSLoci_reordered, IDs = LWintNI_2019.vials, newname = "LWintNI_2019")
 
-LWintSI_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL19LW", attribute = "District", matching = 184)), nm = "KTROL19LW")
+LWintSI_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL19LW", attribute = "Quadrant", matching = 174)), nm = "KTROL19LW")
 PoolCollections.GCL(collections = "KTROL19LW", loci = GAPSLoci_reordered, IDs = LWintSI_2019.vials, newname = "LWintSI_2019")
 
 sapply(grep(pattern = "LWint", objects(pattern = "\\.gcl"), value = TRUE), function(silly) {get(silly)$n})
@@ -310,33 +333,26 @@ sapply(winter_2019_mixnames, function(mix) {
 
 ## Create priors
 
-New this year, I will be analyzing **ALL** Chinook mixtures with the full 33 reporting groups. However, since I ran last year's troll mixtures for just the 26 reporting groups, I will have to mess with the priors a bit. Also a new wrinkle because we've previously ran NISISO together for Early and Late Winter. I think to keep things simple, I'll use the previous year's NISISO estimate for the prior for each of those respective quadrants (NI, SI, and SO)
+Use last year's 33RG estimates
 ```{r read_2018_estimates}
-EWint_2018_26RG_EstimatesStats <- dget("../../SEAK18/Estimates objects/EWint_2018_26RG_EstimatesStats.txt")
-LWint_2018_26RG_EstimatesStats <- dget("../../SEAK18/Estimates objects/LWint_2018_26RG_EstimatesStats.txt")
+EWint_2018_33RG_EstimatesStats <- dget("../../SEAK18/Estimates objects/EWint_2018_33RG_EstimatesStats.txt")
+LWint_2018_33RG_EstimatesStats <- dget("../../SEAK18/Estimates objects/LWint_2018_33RG_EstimatesStats.txt")
 
-(winter_2018_means <- sapply(c(EWint_2018_26RG_EstimatesStats, LWint_2018_26RG_EstimatesStats), function(mix) {mix[, "mean"]}))
+(winter_2018_means <- sapply(c(EWint_2018_33RG_EstimatesStats, LWint_2018_33RG_EstimatesStats), function(mix) {mix[, "mean"]}))
 ```
 
-My plan is to keep the same prior for the 26 groups and then spread out the prior evenly across all other 33 reporting groups.
+Change names
 ```{r setup_2019_priors}
-# Convert from 26RG to 33RG
-winter_2018_means_33RG <- apply(winter_2018_means, 2, function(mix) {mix[GroupVec33RG_to26RG] / table(GroupVec33RG_to26RG)[GroupVec33RG_to26RG]} )
-rownames(winter_2018_means_33RG) <- GroupNames33
-
-# Duplicate NISISO to NI, SI, SO
-winter_2018_means_33RG <- winter_2018_means_33RG[, c(1, 2, 2, 2, 3, 4, 4, 4)]
-
 # Fix dimnames
-colnames(winter_2018_means_33RG) <- winter_2019_mixnames
+colnames(winter_2018_means) <- str_replace(string = colnames(winter_2018_means), pattern = "2018", replacement = "2019")
 
 # Verify
-apply(winter_2018_means_33RG, 2, sum)
+apply(winter_2018_means, 2, sum)
 ```
 
 Now create 2019 priors.
 ```{r create_2019_priors}
-winter_2019_priors <- apply(winter_2018_means_33RG, 2, function(mix) {
+winter_2019_priors <- apply(winter_2018_means, 2, function(mix) {
   Prior.GCL(groupvec = GroupVec33RG_357, groupweights = mix, minval = 0.01)
 } )
 colnames(winter_2019_priors) <- winter_2019_mixnames
@@ -348,12 +364,25 @@ save_objects("winter_2019_priors", "../Objects/")
 Now that we have priors, just need to create *BAYES* control files.
 ```{r BAYES_control}
 sapply(winter_2019_mixnames, function(mix) {
-  CreateControlFile.GCL(sillyvec = SEAKPops357, loci = GAPSLoci_reordered, mixname = mix, basename = "GAPS357pops13loci", suffix = "", nreps = 40000,
-                        nchains = 5, groupvec = GroupVec33RG_357, priorvec = winter_2019_priors[, mix], initmat = GAPS357PopsInits, 
-                        dir = "../BAYES/Control", seeds = WASSIPSockeyeSeeds, thin = c(1, 1, 100), mixfortran = mixfortran, 
-                        basefortran = bayesfortran_357, switches = "F T F T T T F")
+  CreateControlFile.GCL(
+    sillyvec = SEAKPops357,
+    loci = GAPSLoci_reordered,
+    mixname = mix,
+    basename = "GAPS357pops13loci",
+    suffix = "",
+    nreps = 40000,
+    nchains = 5,
+    groupvec = GroupVec33RG_357,
+    priorvec = winter_2019_priors[, mix],
+    initmat = GAPS357PopsInits,
+    dir = "../BAYES/Control",
+    seeds = WASSIPSockeyeSeeds,
+    thin = c(1, 1, 100),
+    mixfortran = mixfortran,
+    basefortran = bayesfortran_357,
+    switches = "F T F T T T F"
+  )
 } )
-
 ```
 
 ## Create output directories
