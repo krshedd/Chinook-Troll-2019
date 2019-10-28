@@ -1,0 +1,58 @@
+---
+title: "Gillnet D108 Individual Assignment"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Purpose
+
+Troy Thynes (area coordinator for Region 1) noted that the stock composition for Taku in Gillnet District 108 harvest was much higher than had been in the past (8% vs. <2%). What's up with this? Look at individual assignment probabilities to see if it is a lot of fish that could be Stikine...
+
+# *ONCOR* Individual Assignment
+
+```{r}
+source("~/../R/Functions.GCL.R")
+```
+
+## Get post-QA genotypes
+
+```{r ONCOR_genotypes}
+load_sillys(path = "../Genotypes/strata_postQA/", sillyvec = "D108Gill_2019")
+load_objects("../Objects/")
+```
+
+## Create *ONCOR* input files
+
+```{r ONCOR_input}
+gcl2Genepop.GCL(sillyvec = "D108Gill_2019", path = "../ONCOR/Mixture/D108Gill_2019.gen", loci = GAPSLoci, VialNums = TRUE, usat = TRUE)
+
+# Remove "Pop" designations
+# rawdat <- scan(file = "../ONCOR/Mixture/D108Gill_2019.gen", what = '', sep = '\n')
+# moddat <- rawdat[-grep(pattern = "Pop", x = rawdat)[-1]]
+# write.table(x = moddat, file = "../ONCOR/Mixture/D108Gill_2019.gen", quote = FALSE, row.names = FALSE, col.names = FALSE)
+```
+
+## Read *ONCOR* output
+
+### Sport scales
+
+Need to match up ASL data with *ONCOR* output. This is a bit of a pain in the ass, because the *ONCOR* output is by SillySource, but ASL has WGC and Sample No. Will need to `attributes` table from KSPORT18.
+```{r ONCOR_sport_raw_output}
+library(tidyverse)
+raw_oncor <- scan(file = "../ONCOR/Output/D108Gill_2019_33RG_IA.txt", what = '', sep = '\n', blank.lines.skip = FALSE)
+skip <- grep(pattern = "PROBABILITY OF EACH INDIVIDUAL IN THE MIXTURE BELONGING TO EACH REPORTING GROUP", x = raw_oncor) + 1
+(D108Gill_dat <- read_delim(file = "../ONCOR/Output/D108Gill_2019_33RG_IA.txt", delim = "\t", skip = skip, trim_ws = TRUE) %>% 
+    dplyr::rename(FishID = X1))
+```
+
+Sort by Taku probability.
+```{r}
+D108Gill_dat %>% 
+  arrange(desc(Taku))
+```
+
+Only three fish that we are pretty confident came from Taku + maybe one more that is most likely Taku. Lots of fish with relatively small probability of being from Taku pushed the stock composition higher.
