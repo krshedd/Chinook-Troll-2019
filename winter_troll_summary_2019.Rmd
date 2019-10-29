@@ -1,0 +1,176 @@
+---
+title: "Winter Troll GSI Plots AY 2019"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, message=FALSE, results='hide'}
+knitr::opts_chunk$set(echo = FALSE)
+source("~/../R/Functions.GCL.R")
+library(tidyverse)
+library(lubridate)
+load_objects("../Objects/")
+load_objects("../Estimates objects/")
+```
+
+# Winter Troll
+
+## Harvest
+
+Low harvest in Early Winter NO, with a higher proportion of Early Winter harvest in NI and SI. Late Winter harvest was higher in NO than last year.
+```{r winter_harvest, message=FALSE}
+(winter_harvest <- read_csv("../Harvest Data/20191021_ft - Detailed Fish Tickets.csv") %>% 
+  mutate(Month = month(`Date Fishing Ended`, label = TRUE, abbr = FALSE)) %>% 
+  mutate(Fishery = case_when(Month %in% month.name[1:4] ~ "Late Winter",
+                             Month %in% month.name[5] ~ "Spring Ret 1", 
+                             Month %in% month.name[6] ~ "Spring Ret 2", 
+                             Month %in% month.name[7] ~ "Summer Ret 1",
+                             Month %in% month.name[8:9] ~ "Summer Ret 2",
+                             Month %in% month.name[10:12] ~ "Early Winter"
+                             )) %>% 
+ mutate(Quadrant = case_when(District %in% c(113, 114, 116, 154, 156, 157, 181, 183, 189) ~ 171,
+                             District %in% c(103, 104, 152) ~ 172,
+                             District %in% c(109, 110, 111, 112, 115) ~ 173,
+                             District %in% c(101, 102, 105, 106, 107, 108) ~ 174)) %>% 
+  filter(Year == 2018 & Fishery == "Early Winter" | Year == 2019 & Fishery == "Late Winter") %>% 
+  group_by(Quadrant, Fishery) %>% 
+  summarise(Harvest = sum(`Number Of Animals (sum)`, na.rm = TRUE)) %>% 
+  spread(Fishery, Harvest, fill = 0))
+```
+
+## Sample sizes
+
+Final samples sizes for all Quadrant x Period. **Note** in all quadrants, we had to subsample in order to make everything proportional to harvest by stat week.
+```{r winter_n}
+winter_2019_sample_sizes %>% 
+  separate(silly, into = c("Fishery", "Year"), sep = "_") %>% 
+  select(Fishery, genotyped, missing, duplicate, final)
+```
+
+## Stock composition
+
+For each Quadrant and Period there will be a table showing stock composition results for all major stocks (i.e. those contributing > 5% to harvest).  
+**Note** Sample sizes for Early Winter are small given the limited harvest and subsampling.
+
+### Early Winter - Northern Outside (171), Northern Inside (173), and Southern Inside (174)
+What are the major stocks contributing to these mixtures (mean > 5%)? **Note** these sample sizes are all ~100 fish, so please take with a grain of salt!
+```{r winter_stock_comp_table_EWintNO}
+winter_2019_33RG_estimates.tdy %>% 
+  mutate(value = value * 100) %>% 
+  spread(estimator, value) %>% 
+  filter(mean > 5 & fishery == "EWint" & quadrant != "SO") %>% 
+  mutate_if(is.numeric, round, 1) %>% 
+  arrange(quadrant, fishery, desc(mean)) %>% 
+  select(fishery, quadrant, group, mean, sd, `5%`, `95%`)
+```
+
+Lower proportion of Columbia River stocks than last year.
+```{r winter_troll_figures_EWintNO, fig.width=8, fig.height=8}
+winter_2019_33RG_estimates.tdy %>% 
+  spread(estimator, value) %>% 
+  filter(fishery == "EWint" & quadrant != "SO") %>% 
+  ggplot(aes(x = group, y = mean * 100)) +
+  geom_col(fill = "lightblue") +
+  geom_errorbar(aes(ymin = `5%` * 100, ymax = `95%` * 100)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.3)) +
+  ylim(0, 100) +
+  ylab("Stock Composition (%)") +
+  xlab("Reporting Group") +
+  ggtitle("Early Winter Troll AY 2019: Northern Outside 171") +
+  facet_grid(quadrant ~ .)
+```
+
+### Early Winter - All Quadrants
+
+What are the major stocks contributing to these mixtures (mean > 5%)?
+```{r winter_stock_comp_table_EWintAllQuad}
+winter_2019_33RG_stratified_estimates.tdy %>% 
+  mutate(value = value * 100) %>% 
+  spread(estimator, value) %>% 
+  filter(mean > 5 & fishery == "EWint") %>% 
+  mutate_if(is.numeric, round, 1) %>% 
+  arrange(quadrant, fishery, desc(mean)) %>% 
+  select(fishery, quadrant, group, mean, sd, `5%`, `95%`)
+```
+
+Much lower prevalence of Columbia River stocks and higher proportion of SSEAK stocks. This is partly due to the shift in harvest away from NO to NI and SI
+```{r winter_troll_figures_EWintAllQuad, out.width="100%"}
+winter_2019_33RG_stratified_estimates.tdy %>% 
+  spread(estimator, value) %>% 
+  filter(fishery == "EWint") %>% 
+  ggplot(aes(x = group, y = mean * 100)) +
+  geom_col(fill = "lightblue") +
+  geom_errorbar(aes(ymin = `5%` * 100, ymax = `95%` * 100)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.3)) +
+  ylim(0, 100) +
+  ylab("Stock Composition (%)") +
+  xlab("Reporting Group") +
+  ggtitle("Early Winter Troll AY 2019: All Quad")
+```
+
+### Late Winter - Northern Outside (171), Northern Inside (173), and Southern Inside (174)
+
+What are the major stocks contributing to these mixtures (mean > 5%)?  
+**Note** sample sizes for NI and SI are much less than NO, so please take with a grain of salt!
+```{r winter_stock_comp_table_LWintNONISI}
+winter_2019_33RG_estimates.tdy %>% 
+  mutate(value = value * 100) %>% 
+  spread(estimator, value) %>% 
+  filter(mean > 5 & fishery == "LWint" & quadrant != "SO") %>% 
+  mutate(quadrant = factor(x = quadrant, levels = c("NO", "SO", "NI", "SI"))) %>% 
+  mutate_if(is.numeric, round, 1) %>% 
+  arrange(quadrant, fishery, desc(mean)) %>% 
+  select(fishery, quadrant, group, mean, sd, `5%`, `95%`)
+```
+
+These stock compositions are more in line with what we saw last year.
+```{r winter_troll_figures_LWintNONISI, fig.width=8, fig.height=8}
+winter_2019_33RG_estimates.tdy %>% 
+  spread(estimator, value) %>% 
+  filter(fishery == "LWint" & quadrant != "SO") %>% 
+  mutate(quadrant = factor(x = quadrant, levels = c("NO", "SO", "NI", "SI"))) %>%   ggplot(aes(x = group, y = mean * 100)) +
+  geom_col(fill = "lightblue") +
+  geom_errorbar(aes(ymin = `5%` * 100, ymax = `95%` * 100)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.3)) +
+  ylim(0, 100) +
+  ylab("Stock Composition (%)") +
+  xlab("Reporting Group") +
+  ggtitle("Late Winter Troll AY 2019: Quadrant") +
+  facet_grid(quadrant ~ .)
+```
+
+### Late Winter - All Quadrants
+
+What are the major stocks contributing to these mixtures (mean > 5%)?
+```{r winter_stock_comp_table_LWintAllQuad}
+winter_2019_33RG_stratified_estimates.tdy %>% 
+  mutate(value = value * 100) %>% 
+  spread(estimator, value) %>% 
+  filter(mean > 5 & fishery == "LWint") %>% 
+  mutate_if(is.numeric, round, 1) %>% 
+  arrange(quadrant, fishery, desc(mean)) %>% 
+  select(fishery, quadrant, group, mean, sd, `5%`, `95%`)
+```
+
+Overall picture for Late Winter is similar to last year. Most of the harvest is from WCVI and BC stocks + SSEAK in inside waters.
+```{r winter_troll_figures_LWintAllQuad, out.width="100%"}
+winter_2019_33RG_stratified_estimates.tdy %>% 
+  spread(estimator, value) %>% 
+  filter(fishery == "LWint") %>% 
+  ggplot(aes(x = group, y = mean * 100)) +
+  geom_col(fill = "lightblue") +
+  geom_errorbar(aes(ymin = `5%` * 100, ymax = `95%` * 100)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.3)) +
+  ylim(0, 100) +
+  ylab("Stock Composition (%)") +
+  xlab("Reporting Group") +
+  ggtitle("Late Winter Troll AY 2019: All Quad")
+```

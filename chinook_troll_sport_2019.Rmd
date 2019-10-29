@@ -438,10 +438,10 @@ save_objects(c("winter_2019_33RG_estimates.tdy"), "../Estimates objects")
 Generate All Quad estimates for Early and Late Winter.
 ```{r winter_stratified_33RG}
 EWint_2019_33RG_StratifiedEstimatesStats <- 
-  StratifiedEstimator.GCL(groupvec = 1:33, groupnames = GroupNames33, maindir = "../BAYES/Output/", mixvec = winter_2019_mixnames[1:4], catchvec = c(4501, 86, 1262, 1549), newname = "EWintAllQuad", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
+  StratifiedEstimator.GCL(groupvec = 1:33, groupnames = GroupNames33, maindir = "../BAYES/Output/", mixvec = winter_2019_mixnames[1:4], catchvec = c(1441, 68, 1878, 2520), newname = "EWintAllQuad", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
 
 LWint_2019_33RG_StratifiedEstimatesStats <- 
-  StratifiedEstimator.GCL(groupvec = 1:33, groupnames = GroupNames33, maindir = "../BAYES/Output/", mixvec = winter_2019_mixnames[5:8], catchvec = c(1664, 362, 903, 1640), newname = "LWintAllQuad", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
+  StratifiedEstimator.GCL(groupvec = 1:33, groupnames = GroupNames33, maindir = "../BAYES/Output/", mixvec = winter_2019_mixnames[5:8], catchvec = c(3030, 543, 908, 1978), newname = "LWintAllQuad", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
 
 save_objects(c("EWint_2019_33RG_StratifiedEstimatesStats", "LWint_2019_33RG_StratifiedEstimatesStats"), "../Estimates objects")
 ```
@@ -467,3 +467,82 @@ winter_2019_33RG_stratified_estimates.tdy <-
 
 save_objects(c("winter_2019_33RG_stratified_estimates.tdy"), "../Estimates objects")
 ```
+
+## 18 reporting groups
+
+Create standard + stratified summaries and save.
+```{r winter_BAYES_summarise_18RG}
+# 18 reporting groups
+EWint_2019_18RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = GroupVec33RG_to18RG, groupnames = GroupNames18, maindir = "../BAYES/Output", mixvec = winter_2019_mixnames[1:4],
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+LWint_2019_18RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = GroupVec33RG_to18RG, groupnames = GroupNames18, maindir = "../BAYES/Output", mixvec = winter_2019_mixnames[5:8],
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+# dir.create("../Estimates objects")
+save_objects(c("EWint_2019_18RG_EstimatesStats", "LWint_2019_18RG_EstimatesStats"), "../Estimates objects")
+
+# Stratified
+EWint_2019_18RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec33RG_to18RG, groupnames = GroupNames18, maindir = "../BAYES/Output/", mixvec = winter_2019_mixnames[1:4], catchvec = c(1441, 68, 1878, 2520), newname = "EWintAllQuad", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
+
+LWint_2019_18RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec33RG_to18RG, groupnames = GroupNames18, maindir = "../BAYES/Output/", mixvec = winter_2019_mixnames[5:8], catchvec = c(3030, 543, 908, 1978), newname = "LWintAllQuad", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
+
+save_objects(c("EWint_2019_18RG_StratifiedEstimatesStats", "LWint_2019_18RG_StratifiedEstimatesStats"), "../Estimates objects")
+```
+
+## 8 reporting groups
+
+Create standard + stratified summaries and save.
+```{r winter_BAYES_summarise_8RG}
+# 8 reporting groups
+EWint_2019_8RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = GroupVec33RG_to8RG, groupnames = GroupNames8, maindir = "../BAYES/Output", mixvec = winter_2019_mixnames[1:4],
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+LWint_2019_8RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = GroupVec33RG_to8RG, groupnames = GroupNames8, maindir = "../BAYES/Output", mixvec = winter_2019_mixnames[5:8],
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+# dir.create("../Estimates objects")
+save_objects(c("EWint_2019_8RG_EstimatesStats", "LWint_2019_8RG_EstimatesStats"), "../Estimates objects")
+
+# Stratified
+EWint_2019_8RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec33RG_to8RG, groupnames = GroupNames8, maindir = "../BAYES/Output/", mixvec = winter_2019_mixnames[1:4], catchvec = c(1441, 68, 1878, 2520), newname = "EWintAllQuad", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
+
+LWint_2019_8RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec33RG_to8RG, groupnames = GroupNames8, maindir = "../BAYES/Output/", mixvec = winter_2019_mixnames[5:8], catchvec = c(3030, 543, 908, 1978), newname = "LWintAllQuad", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
+
+save_objects(c("EWint_2019_8RG_StratifiedEstimatesStats", "LWint_2019_8RG_StratifiedEstimatesStats"), "../Estimates objects")
+```
+
+## 4 reporting groups
+
+Create standard + stratified summaries and save.
+```{r winter_BAYES_summarise_4RG}
+# 4 reporting groups
+EWint_2019_4RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = GroupVec33RG_to4RG, groupnames = GroupNames4, maindir = "../BAYES/Output", mixvec = winter_2019_mixnames[1:4],
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+LWint_2019_4RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = GroupVec33RG_to4RG, groupnames = GroupNames4, maindir = "../BAYES/Output", mixvec = winter_2019_mixnames[5:8],
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+# dir.create("../Estimates objects")
+save_objects(c("EWint_2019_4RG_EstimatesStats", "LWint_2019_4RG_EstimatesStats"), "../Estimates objects")
+
+# Stratified
+EWint_2019_4RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec33RG_to4RG, groupnames = GroupNames4, maindir = "../BAYES/Output/", mixvec = winter_2019_mixnames[1:4], catchvec = c(1441, 68, 1878, 2520), newname = "EWintAllQuad", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
+
+LWint_2019_4RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec33RG_to4RG, groupnames = GroupNames4, maindir = "../BAYES/Output/", mixvec = winter_2019_mixnames[5:8], catchvec = c(3030, 543, 908, 1978), newname = "LWintAllQuad", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
+
+save_objects(c("EWint_2019_4RG_StratifiedEstimatesStats", "LWint_2019_4RG_StratifiedEstimatesStats"), "../Estimates objects")
+```
+
