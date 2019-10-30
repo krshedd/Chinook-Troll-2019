@@ -43,8 +43,6 @@ gcl2Genepop.GCL(sillyvec = "D108Gill_2019", path = "../ONCOR/Mixture/D108Gill_20
 
 ## Read *ONCOR* output
 
-### Sport scales
-
 Need to match up ASL data with *ONCOR* output. This is a bit of a pain in the ass, because the *ONCOR* output is by SillySource, but ASL has WGC and Sample No. Will need to `attributes` table from KSPORT18.
 ```{r ONCOR_sport_raw_output}
 raw_oncor <- scan(file = "../ONCOR/Output/D108Gill_2019_33RG_IA.txt", what = '', sep = '\n', blank.lines.skip = FALSE)
@@ -655,3 +653,61 @@ asl_gillnet <- read_csv(file = "../ASL Data/20190822_Gillnet_D8_11_1_15_Detailed
   select(Year, `Sample Date`, `Stat Week`, `Port Code`, District, Subdistrict, `Average Length mm`, SizeClass, `Dna Specimen No`) %>% 
   write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)
 ```
+
+# D115 *ONCOR* Individual Assignment
+
+```{r}
+source("~/../R/Functions.GCL.R")
+library(tidyverse)
+```
+
+## Get post-QA genotypes
+
+```{r}
+load_sillys(path = "../Genotypes/strata_postQA/", sillyvec = "D115Gill_2019")
+load_objects("../Objects/")
+```
+
+## Create *ONCOR* input files
+
+```{r}
+gcl2Genepop.GCL(sillyvec = "D115Gill_2019", path = "../ONCOR/Mixture/D115Gill_2019.gen", loci = GAPSLoci, VialNums = TRUE, usat = TRUE)
+
+# Remove "Pop" designations
+# rawdat <- scan(file = "../ONCOR/Mixture/D108Gill_2019.gen", what = '', sep = '\n')
+# moddat <- rawdat[-grep(pattern = "Pop", x = rawdat)[-1]]
+# write.table(x = moddat, file = "../ONCOR/Mixture/D108Gill_2019.gen", quote = FALSE, row.names = FALSE, col.names = FALSE)
+```
+
+## Read *ONCOR* output
+
+Need to match up ASL data with *ONCOR* output. This is a bit of a pain in the ass, because the *ONCOR* output is by SillySource, but ASL has WGC and Sample No. Will need to `attributes` table from KSPORT18.
+```{r}
+raw_oncor <- scan(file = "../ONCOR/Output/D115Gill_2019_33RG_IA.txt", what = '', sep = '\n', blank.lines.skip = FALSE)
+skip <- grep(pattern = "PROBABILITY OF EACH INDIVIDUAL IN THE MIXTURE BELONGING TO EACH REPORTING GROUP", x = raw_oncor) + 1
+(D115Gill_dat <- read_delim(file = "../ONCOR/Output/D115Gill_2019_33RG_IA.txt", delim = "\t", skip = skip, trim_ws = TRUE) %>% 
+    dplyr::rename(FishID = X1))
+```
+
+Sort by Taku probability.
+```{r}
+D115Gill_dat %>% 
+  arrange(desc(Taku))
+```
+
+
+Sort by Andrew probability.
+```{r}
+D115Gill_dat %>% 
+  arrange(desc(Andrew))
+```
+
+```{r}
+D115Gill_dat %>% 
+  gather(RG, prob, -FishID) %>% 
+  filter(RG %in% c("NSEAK", "SSEAK", "Taku", "Andrew", "Stikine")) %>% 
+  ggplot(aes(x = prob)) +
+  geom_histogram() +
+  facet_grid(. ~ RG)
+```
+
