@@ -1,5 +1,5 @@
 ---
-title: "Gillnet D108 Individual Assignment"
+title: "Gillnet D108 Individual Assignment + Redo"
 output:
   html_notebook:
     theme: united
@@ -7,6 +7,10 @@ output:
 editor_options: 
   chunk_output_type: inline
 ---
+
+# Background
+
+After looking at the IA (below), we decided to subsample fish in closer proportion to harvest and redo the D108 Gillnet TBR stock composition. I also looked in to D111, but found no difference. We ended up using the "redo" for D108 Gillnet as 1) the samples better matched harvest and 2) the results better matched run-timing expectation + CWT data.
 
 # Purpose
 
