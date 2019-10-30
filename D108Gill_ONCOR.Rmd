@@ -612,3 +612,42 @@ bind_rows(
   select(GroupNames2) %>%  # toss other varialbes
   write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
 ```
+
+# ASL metadata
+
+The summary spreadsheet has tabs for "Gill_SampleInfo" and "Sport_SampleInfo" that has the ASL data for all TBR fish run since 2004. Need to add the ASL metadata from this year as well.
+
+Need to recreate D108Gill_2019_redo from **BAYES** mixture file...ugh
+```{r}
+save_sillys("D108Gill_2019_rerun", "../Genotypes/strata_postQA/")
+```
+
+## Gillnet
+
+Read in gillnet ASL data for extracted fish and add to spreadsheet, then re-do pivot table.
+```{r gill_metadata}
+# join extraction asl with fish passing QA, select columns, copy to clipboard
+asl_gillnet <- read_csv(file = "../ASL Data/20190822_Gillnet_D8_11_1_15_Detailed ASL Samples.csv") %>% 
+  mutate(Subdistrict = `Sub-District`) %>%  # str_sub(District, 5, 6)
+  mutate(SizeClass = case_when(`Average Length mm` >= 660 ~ "LARGE",
+                               `Average Length mm` < 660 ~ "SMALL")) %>% 
+  filter(District %in% c(108, 111)) %>% 
+  right_join(
+    bind_rows(
+      D108Gill_2019_rerun.gcl$attributes %>% 
+        mutate(WGC4digit = str_sub(DNA_TRAY_CODE, 7, 10)) %>% 
+        mutate(WGC2digit = str_pad(DNA_TRAY_WELL_CODE, 2, "left", "0")) %>% 
+        unite("Dna Specimen No", c(WGC4digit, WGC2digit), sep = "") %>% 
+        mutate(`Dna Specimen No` = as.integer(`Dna Specimen No`)) %>% 
+        select(`Dna Specimen No`),
+      D111Gill_2019.gcl$attributes %>% 
+        mutate(WGC4digit = str_sub(DNA_TRAY_CODE, 7, 10)) %>% 
+        mutate(WGC2digit = str_pad(DNA_TRAY_WELL_CODE, 2, "left", "0")) %>% 
+        unite("Dna Specimen No", c(WGC4digit, WGC2digit), sep = "") %>% 
+        mutate(`Dna Specimen No` = as.integer(`Dna Specimen No`)) %>% 
+        select(`Dna Specimen No`)
+    )
+    , by = "Dna Specimen No") %>% 
+  select(Year, `Sample Date`, `Stat Week`, `Port Code`, District, Subdistrict, `Average Length mm`, SizeClass, `Dna Specimen No`) %>% 
+  write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)
+```
