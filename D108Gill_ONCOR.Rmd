@@ -22,7 +22,7 @@ library(tidyverse)
 ## Get post-QA genotypes
 
 ```{r ONCOR_genotypes}
-load_sillys(path = "../Genotypes/strata_postQA/", sillyvec = "D108Gill_2019")
+load_sillys(path = "../Genotypes/strata_postQA/", sillyvec = c("D108Gill_2019", "D111Gill_2019"))
 load_objects("../Objects/")
 ```
 
@@ -180,6 +180,8 @@ Create Output directory
 dir.create("../BAYES/Output/D108Gill_2019_rerun")
 ```
 
+# Resummarise BAYES Estimates
+
 Estimates
 ```{r}
 # full 33 reporting groups
@@ -328,6 +330,284 @@ bind_rows(
   filter(n_group == 2) %>%  # want 5RG
   filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
   filter(mixname == "D108Gill_2019_rerun") %>%  # specify mixture
+  spread(group, value) %>%  # wide
+  select(GroupNames2) %>%  # toss other varialbes
+  write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
+```
+
+# Re-Do D111 Gillnet
+
+Mangers thought the stock composition for D108 was a bit off, and looking at the distribution of sampling, we oversampled SW 26 in order to boost sample size. Since we re-did D108, I'm going to look at D111 and subsample fish and reanalyze a more representative mixture. Looking at our original D111 mixture, we had excess samples from SW 27 to make up for the lack of samples from SW 28
+```{r}
+D111Gill_2019.gcl$attributes %>% 
+  as_tibble()
+```
+
+## Get ASL
+
+#### Read raw ASL
+```{r}
+(asl_gillnet <- read_csv(file = "../ASL Data/20190822_Gillnet_D8_11_1_15_Detailed ASL Samples.csv"))
+```
+
+#### Manipulate ASL
+```{r}
+(asl_gillnet <- asl_gillnet %>% 
+   filter(District %in% 111 & `Length mm` >= 660) %>% 
+   filter(`Stat Week` <= 29) %>% 
+   filter(!is.na(`Dna Specimen No`))
+)
+```
+
+## Join attributes
+
+```{r}
+D111Gill_2019.gcl$attributes <- D111Gill_2019.gcl$attributes %>% 
+  mutate(WGC_4digit = str_sub(string = DNA_TRAY_CODE, start = 7, end = 10)) %>% 
+  mutate(WGC_2digit = str_pad(string = DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = 0)) %>% 
+  unite("Dna Specimen No", c(WGC_4digit, WGC_2digit), sep = "") %>% 
+  mutate("Dna Specimen No" = as.numeric(`Dna Specimen No`)) %>% 
+  left_join(asl_gillnet, by = "Dna Specimen No")
+```
+
+```{r}
+D111Gill_2019.gcl$attributes %>% 
+  count(`Stat Week`)
+```
+
+## Subsample
+
+### Read Fish Ticket Data
+```{r}
+(harvest_gillnet <- read_csv(file = "../Harvest Data/20190822_gillnet_ft - Detailed Fish Tickets.csv") %>% 
+   filter(District %in% c(111)) %>% 
+   filter(between(`Stat Week`, 25, 29)) %>% 
+   filter(`Species Code And Name` == "410 - salmon, chinook") %>% 
+   filter(`Gear Code` == "03") %>% 
+   filter(`Harvest Code` == 11) %>% 
+   filter(Year == 2019)
+)
+```
+
+Keep reducing to figure out how big our mixture can be...
+```{r}
+(fish_2_pick <- harvest_gillnet %>% 
+   group_by(District, `Stat Week`) %>% 
+   summarise(harvest = sum(`Number Of Animals (sum)`)) %>% 
+   mutate(p_harvest = harvest / sum(harvest)) %>% 
+   mutate(n = round(p_harvest * 82))
+)
+```
+
+Randomly pick fish per week
+```{r}
+gillnet_111_torerun <- D111Gill_2019.gcl$attributes %>% 
+  select(FK_FISH_ID, `Stat Week`) %>% 
+  nest(-`Stat Week`) %>% 
+  right_join(fish_2_pick, by = "Stat Week") %>% 
+  mutate(Sample = map2(data, n, sample_n)) %>% 
+  unnest(Sample) %>% 
+  select(-data)
+```
+
+Verify subsampled fish
+```{r}
+gillnet_111_torerun %>% 
+  count(`Stat Week`)
+```
+
+Subsample fish for a new SILLY
+```{r}
+D111Gill_2019_rerun_vials = list("D111Gill_2019" = as.character(gillnet_111_torerun %>% pull(FK_FISH_ID)))
+
+PoolCollections.GCL(collections = "D111Gill_2019", loci = GAPSLoci_reordered, IDs = D111Gill_2019_rerun_vials, newname = "D111Gill_2019_rerun")
+```
+
+# Recreate BAYES files
+
+Create Mixture
+```{r}
+CreateMixture.GCL(sillys = "D111Gill_2019_rerun", loci = GAPSLoci_reordered, IDs = NULL, mixname = "D111Gill_2019_rerun", dir = "../BAYES/Mixture", type = "BAYES", PT = FALSE)
+save_objects(c("D111Gill_2019_rerun_vials", "gillnet_111_torerun"), "../Objects/")
+```
+
+Create Control
+```{r}
+CreateControlFile.GCL(
+  sillyvec = SEAKPops357,
+  loci = GAPSLoci_reordered,
+  mixname = "D111Gill_2019_rerun",
+  basename = "GAPS357pops13loci",
+  suffix = "",
+  nreps = 40000,
+  nchains = 5,
+  groupvec = GroupVec33RG_357,
+  priorvec = TBR_priors[, "D111Gill_2019"],
+  initmat = GAPS357PopsInits,
+  dir = "../BAYES/Control",
+  seeds = WASSIPSockeyeSeeds,
+  thin = c(1, 1, 100),
+  mixfortran = mixfortran,
+  basefortran = bayesfortran_357,
+  switches = "F T F T T T F"
+)
+```
+
+Create Output directory
+```{r}
+dir.create("../BAYES/Output/D111Gill_2019_rerun")
+```
+
+# Resummarise BAYES Estimates
+
+Estimates
+```{r}
+# full 33 reporting groups
+(D111Gill_2019_rerun_33RG_EstimatesStats <-
+   CustomCombineBAYESOutput.GCL(
+     groupvec = 1:33,
+     groupnames = GroupNames33,
+     maindir = "../BAYES/Output",
+     mixvec = "D111Gill_2019_rerun",
+     prior = "",
+     ext = "RGN",
+     nchains = 5,
+     burn = 0.5,
+     alpha = 0.1,
+     PosteriorOutput = FALSE
+   )
+)
+```
+
+```{r}
+(D111Gill_2019_rerun_5RG_EstimatesStats <-
+   CustomCombineBAYESOutput.GCL(
+     groupvec = GroupVec33RG_to5RG,
+     groupnames = GroupNames5,
+     maindir = "../BAYES/Output",
+     mixvec = "D111Gill_2019_rerun",
+     prior = "",
+     ext = "RGN",
+     nchains = 5,
+     burn = 0.5,
+     alpha = 0.1,
+     PosteriorOutput = FALSE
+   )
+)
+save_objects("D111Gill_2019_rerun_5RG_EstimatesStats", "../Estimates objects/")
+```
+
+Compare to original estimates
+```{r}
+dget("../Estimates objects/TBR_2019_5RG_EstimatesStats.txt")["D111Gill_2019"]
+```
+
+```{r}
+(D111Gill_2019_rerun_3RG_EstimatesStats <-
+   CustomCombineBAYESOutput.GCL(
+     groupvec = GroupVec33RG_to3RG,
+     groupnames = GroupNames3,
+     maindir = "../BAYES/Output",
+     mixvec = "D111Gill_2019_rerun",
+     prior = "",
+     ext = "RGN",
+     nchains = 5,
+     burn = 0.5,
+     alpha = 0.1,
+     PosteriorOutput = FALSE
+   )
+)
+save_objects("D111Gill_2019_rerun_3RG_EstimatesStats", "../Estimates objects/")
+```
+
+```{r}
+(D111Gill_2019_rerun_2RG_EstimatesStats <-
+   CustomCombineBAYESOutput.GCL(
+     groupvec = GroupVec33RG_to2RG,
+     groupnames = GroupNames2,
+     maindir = "../BAYES/Output",
+     mixvec = "D111Gill_2019_rerun",
+     prior = "",
+     ext = "RGN",
+     nchains = 5,
+     burn = 0.5,
+     alpha = 0.1,
+     PosteriorOutput = FALSE
+   )
+)
+save_objects("D111Gill_2019_rerun_2RG_EstimatesStats", "../Estimates objects/")
+```
+
+5RG for spreadsheet
+```{r}
+# make in to a tidy tibble (tall)
+bind_rows(
+  lapply("D111Gill_2019_rerun", function(mix) {  # loop over mixture names
+    D111Gill_2019_rerun_5RG_EstimatesStats[[mix]] %>%  # for each matrix
+      as_tibble(rownames = "group") %>%  # make tibble with rownames as group
+      mutate(mixname = mix) %>%  # make column for mixname
+      mutate(n_group = n_distinct(group))  # make column for number of groups
+  } )
+) %>% 
+  gather(estimator, value, -mixname, -group, - n_group) %>%  # gather all estimators
+  separate(mixname, c("mix", "year"), sep = "_", remove = FALSE) %>%  # extract mixture and year
+  separate(mix, c("district", "gear"), sep = 4) %>%  # extract district and gear
+  mutate(district = as.integer(str_sub(district, 2, 4))) %>%   # make district integer
+  mutate(estimator = factor(estimator, c("mean", "sd", "5%", "95%", "median", "P=0", "GR"))) %>%  # factor for ordering
+  mutate(group = factor(group, GroupNames5)) %>%  # factor for ordering
+  filter(n_group == 5) %>%  # want 5RG
+  filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
+  filter(mixname == "D111Gill_2019_rerun") %>%  # specify mixture
+  spread(group, value) %>%  # wide
+  select(GroupNames5) %>%  # toss other varialbes
+  write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
+```
+
+3RG for spreadsheet
+```{r}
+# make in to a tidy tibble (tall)
+bind_rows(
+  lapply("D111Gill_2019_rerun", function(mix) {  # loop over mixture names
+    D111Gill_2019_rerun_3RG_EstimatesStats[[mix]] %>%  # for each matrix
+      as_tibble(rownames = "group") %>%  # make tibble with rownames as group
+      mutate(mixname = mix) %>%  # make column for mixname
+      mutate(n_group = n_distinct(group))  # make column for number of groups
+  } )
+) %>% 
+  gather(estimator, value, -mixname, -group, - n_group) %>%  # gather all estimators
+  separate(mixname, c("mix", "year"), sep = "_", remove = FALSE) %>%  # extract mixture and year
+  separate(mix, c("district", "gear"), sep = 4) %>%  # extract district and gear
+  mutate(district = as.integer(str_sub(district, 2, 4))) %>%   # make district integer
+  mutate(estimator = factor(estimator, c("mean", "sd", "5%", "95%", "median", "P=0", "GR"))) %>%  # factor for ordering
+  mutate(group = factor(group, GroupNames3)) %>%  # factor for ordering
+  filter(n_group == 3) %>%  # want 5RG
+  filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
+  filter(mixname == "D111Gill_2019_rerun") %>%  # specify mixture
+  spread(group, value) %>%  # wide
+  select(GroupNames3) %>%  # toss other varialbes
+  write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
+```
+
+2RG for spreadsheet
+```{r}
+# make in to a tidy tibble (tall)
+bind_rows(
+  lapply("D111Gill_2019_rerun", function(mix) {  # loop over mixture names
+    D111Gill_2019_rerun_2RG_EstimatesStats[[mix]] %>%  # for each matrix
+      as_tibble(rownames = "group") %>%  # make tibble with rownames as group
+      mutate(mixname = mix) %>%  # make column for mixname
+      mutate(n_group = n_distinct(group))  # make column for number of groups
+  } )
+) %>% 
+  gather(estimator, value, -mixname, -group, - n_group) %>%  # gather all estimators
+  separate(mixname, c("mix", "year"), sep = "_", remove = FALSE) %>%  # extract mixture and year
+  separate(mix, c("district", "gear"), sep = 4) %>%  # extract district and gear
+  mutate(district = as.integer(str_sub(district, 2, 4))) %>%   # make district integer
+  mutate(estimator = factor(estimator, c("mean", "sd", "5%", "95%", "median", "P=0", "GR"))) %>%  # factor for ordering
+  mutate(group = factor(group, GroupNames2)) %>%  # factor for ordering
+  filter(n_group == 2) %>%  # want 5RG
+  filter(estimator %in% c("mean", "sd", "5%", "95%")) %>%  # only relevant estimators
+  filter(mixname == "D111Gill_2019_rerun") %>%  # specify mixture
   spread(group, value) %>%  # wide
   select(GroupNames2) %>%  # toss other varialbes
   write.table('clipboard', sep = '\t', row.names = FALSE, col.names = FALSE)  # copy to clipboard
