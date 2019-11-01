@@ -863,3 +863,21 @@ sapply(D115Gill_mixnames, function(mix) {
 ```{r BAYES_output}
 sapply(D115Gill_mixnames, function(mix) {dir.create(paste0("../BAYES/Output/", mix))} )
 ```
+
+## Stratified estimate for 33 RG
+
+Generate stratified estimate for D115 SW25-29.
+```{r D115_stratified_33RG}
+D115Gill_2019_33RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = 1:33, groupnames = GroupNames33, maindir = "../BAYES/Output/", mixvec = D115Gill_mixnames, catchvec = c(153, 118, 145, 132, 139), newname = "D115Gill_2019", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
+
+save_objects("D115Gill_2019_33RG_StratifiedEstimatesStats", "../Estimates objects")
+```
+
+Make in to tall tibble.
+```{r D115_stratified_33RG_tibble}
+as_tibble(x = D115Gill_2019_33RG_StratifiedEstimatesStats, rownames = "group") %>% 
+  # filter(`95%` >= 0.05) %>% 
+  top_n(n = 5, `mean`) %>% 
+  arrange(desc(mean))
+```
