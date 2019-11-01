@@ -1,5 +1,5 @@
 ---
-title: "Gillnet D108 Individual Assignment + Redo"
+title: "Gillnet D108 Individual Assignment + Redo D108/111/115"
 output:
   html_notebook:
     theme: united
@@ -11,6 +11,8 @@ editor_options:
 # Background
 
 After looking at the IA (below), we decided to subsample fish in closer proportion to harvest and redo the D108 Gillnet TBR stock composition. I also looked in to D111, but found no difference. We ended up using the "redo" for D108 Gillnet as 1) the samples better matched harvest and 2) the results better matched run-timing expectation + CWT data.
+
+Also re-running D115 by SW, because the harvest changed so my original mixture is not representative. Run by SW and stratify by "new" harvest.
 
 # Purpose
 
@@ -711,3 +713,153 @@ D115Gill_dat %>%
   facet_grid(. ~ RG)
 ```
 
+```{r}
+load_sillys(path = "../Genotypes/strata_postQA/", sillyvec = "D115Gill_2019")
+```
+
+```{r}
+D115Gill_2019.gcl$attributes %>% 
+  mutate(WGC4 = str_sub(DNA_TRAY_CODE, 7, 10)) %>% 
+  mutate(WGC2 = str_pad(DNA_TRAY_WELL_CODE, 2, "left", "0")) %>% 
+  unite(dna_specimen_no, c("WGC4", "WGC2"), sep = "") %>% 
+  mutate("Dna Specimen No" = as.numeric(dna_specimen_no)) %>% 
+  left_join(filter(asl_gillnet, District == 115), by = "Dna Specimen No") %>% 
+  select(SillySource, `Stat Week`) %>%
+  filter(SillySource %in% c("KGILL19D15_192", "KGILL19D15_13", "KGILL19D15_79", "KGILL19D15_10", "KGILL19D15_55", "KGILL19D15_200", "KGILL19D15_119"))
+```
+
+```{r}
+D115Gill_2019.gcl$attributes %>% 
+  mutate(WGC4 = str_sub(DNA_TRAY_CODE, 7, 10)) %>% 
+  mutate(WGC2 = str_pad(DNA_TRAY_WELL_CODE, 2, "left", "0")) %>% 
+  unite(dna_specimen_no, c("WGC4", "WGC2"), sep = "") %>% 
+  mutate("Dna Specimen No" = as.numeric(dna_specimen_no)) %>% 
+  left_join(filter(asl_gillnet, District == 115), by = "Dna Specimen No") %>% 
+  select(SillySource, `Stat Week`) %>% 
+  left_join(D115Gill_dat, by = c("SillySource" = "FishID")) %>% 
+  filter(NSEAK > 0.8) %>% 
+  count(`Stat Week`)
+```
+
+# Re-Do D151 Gillnet
+
+I picked fish for extraction from SW 25-29 at the end of SW34, however, it looks like the harvest numbers were incorrect (late fish tickets). Need to run each week separately and stratify across weeks according to harvest. Not planning to run any more fish.
+
+```{r}
+load_sillys(path = "../Genotypes/strata_postQA/", sillyvec = "D115Gill_2019")
+load_objects("../Objects/")
+```
+
+```{r}
+D115Gill_2019.gcl$attributes %>% 
+  as_tibble()
+```
+
+## Get ASL
+
+#### Read raw ASL
+```{r}
+(asl_gillnet <- read_csv(file = "../ASL Data/20190822_Gillnet_D8_11_1_15_Detailed ASL Samples.csv"))
+```
+
+#### Manipulate ASL
+```{r}
+(asl_gillnet <- asl_gillnet %>% 
+   filter(District %in% 115) %>% 
+   filter(`Stat Week` <= 29) %>% 
+   filter(!is.na(`Dna Specimen No`))
+)
+```
+
+## Join attributes
+
+```{r}
+D115Gill_2019.gcl$attributes <- D115Gill_2019.gcl$attributes %>% 
+  mutate(WGC_4digit = str_sub(string = DNA_TRAY_CODE, start = 7, end = 10)) %>% 
+  mutate(WGC_2digit = str_pad(string = DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = 0)) %>% 
+  unite("Dna Specimen No", c(WGC_4digit, WGC_2digit), sep = "") %>% 
+  mutate("Dna Specimen No" = as.numeric(`Dna Specimen No`)) %>% 
+  left_join(asl_gillnet, by = "Dna Specimen No")
+```
+
+```{r}
+D115Gill_2019.gcl$attributes %>% 
+  count(`Stat Week`)
+```
+
+## Define Mixture Strata
+```{r}
+D115Gill_SW25_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "D115Gill_2019", attribute = "Stat Week", matching = 25)), nm = "D115Gill_2019")
+PoolCollections.GCL(collections = "D115Gill_2019", loci = GAPSLoci_reordered, IDs = D115Gill_SW25_2019.vials, newname = "D115Gill_SW25_2019")
+
+D115Gill_SW26_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "D115Gill_2019", attribute = "Stat Week", matching = 26)), nm = "D115Gill_2019")
+PoolCollections.GCL(collections = "D115Gill_2019", loci = GAPSLoci_reordered, IDs = D115Gill_SW26_2019.vials, newname = "D115Gill_SW26_2019")
+
+D115Gill_SW27_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "D115Gill_2019", attribute = "Stat Week", matching = 27)), nm = "D115Gill_2019")
+PoolCollections.GCL(collections = "D115Gill_2019", loci = GAPSLoci_reordered, IDs = D115Gill_SW27_2019.vials, newname = "D115Gill_SW27_2019")
+
+D115Gill_SW28_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "D115Gill_2019", attribute = "Stat Week", matching = 28)), nm = "D115Gill_2019")
+PoolCollections.GCL(collections = "D115Gill_2019", loci = GAPSLoci_reordered, IDs = D115Gill_SW28_2019.vials, newname = "D115Gill_SW28_2019")
+
+D115Gill_SW29_2019.vials <- setNames(object = list(AttributesToIDs.GCL(silly = "D115Gill_2019", attribute = "Stat Week", matching = 29)), nm = "D115Gill_2019")
+PoolCollections.GCL(collections = "D115Gill_2019", loci = GAPSLoci_reordered, IDs = D115Gill_SW29_2019.vials, newname = "D115Gill_SW29_2019")
+
+D115Gill_mixnames <- paste0("D115Gill_SW", 25:29, "_2019")
+
+sapply(D115Gill_mixnames, function(mix) {get(paste0(mix, ".gcl"))$n})
+
+save_objects("D115Gill_mixnames", "../Objects/")
+save_sillys(D115Gill_mixnames, "../Genotypes/strata_postQA/")
+```
+
+## Create mixtures
+
+Create gillnet *BAYES* mixture files.
+```{r BAYES_mixtures}
+sapply(D115Gill_mixnames, function(mix) {
+  CreateMixture.GCL(sillys = mix, loci = GAPSLoci_reordered, IDs = NULL, mixname = mix, dir = "../BAYES/Mixture", type = "BAYES", PT = FALSE)
+} )
+```
+
+## Create priors
+
+New this year, as last year, I will be analyzing **ALL** Chinook mixtures with the full 33 reporting groups, including gillnet. However, since we have never run either of these mixtures before, what to do for a prior? Going with flat.
+
+My plan is to keep the same prior for the gillnet groups and then spread out the "Other" evenly across all other non-gillnet reporting groups.
+Now get 2018 esimates for Sport D111 + Gillnet 108 and 111
+```{r}
+# flat_prior <- Prior.GCL(groupvec = GroupVec33RG_357, groupweights = rep(1/33, 33))
+# save_objects("flat_prior", "../Objects/")
+```
+
+## Create control files
+
+Now that we have priors, just need to create *BAYES* control files.
+```{r BAYES_control}
+sapply(D115Gill_mixnames, function(mix) {
+  CreateControlFile.GCL(
+    sillyvec = SEAKPops357,
+    loci = GAPSLoci_reordered,
+    mixname = mix,
+    basename = "GAPS357pops13loci",
+    suffix = "",
+    nreps = 40000,
+    nchains = 5,
+    groupvec = GroupVec33RG_357,
+    priorvec = flat_prior,
+    initmat = GAPS357PopsInits,
+    dir = "../BAYES/Control",
+    seeds = WASSIPSockeyeSeeds,
+    thin = c(1, 1, 100),
+    mixfortran = mixfortran,
+    basefortran = bayesfortran_357,
+    switches = "F T F T F T F"
+  )
+})
+```
+
+## Create output directories
+
+```{r BAYES_output}
+sapply(D115Gill_mixnames, function(mix) {dir.create(paste0("../BAYES/Output/", mix))} )
+```
