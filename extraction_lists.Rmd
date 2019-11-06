@@ -3332,3 +3332,930 @@ write_csv(spring_torun_extraction, path = "../Extraction Lists/Spring_Extraction
 spring_torun_extraction %>% 
   count(SILLY, `TISSUE TYPE`)
 ```
+
+# Sport (Origins not Origins)
+
+Tue Nov 05 11:40:27 2019
+
+Goal is to analyze 2,800 fish that we proposed following strata from previous years:  
+  - Sitka
+  - Craig
+  - Ketchikan
+  - Petersburg/Wrangell (note some fish were already run for TBR)
+  - Outisde through biweek 13 (subset of Sitka and Craig)
+  - Outside post biweek 13 (subset of Sitka and Craig)
+
+Business rule is to take fish from within 1 biweek on either side to fill in for missing
+
+## ASL Data
+
+### Read raw ASL
+
+```{r}
+(asl_sport <- read_csv(file = "../ASL Data/_2019_SEAK_SF_Whatman_AWL_03OCT19.csv"))
+```
+
+### QA ASL
+
+Check Whatman_Card digits...
+```{r}
+table(nchar(asl_sport$Whatman_Card))
+```
+
+Bummer, we have one card with only 3 digits...better look in to.
+```{r}
+asl_sport %>% 
+  mutate(nchar_Whatman_Card = nchar(Whatman_Card)) %>% 
+  filter(nchar_Whatman_Card == 3)
+```
+
+Are there any other fish on this card? Could be a typo.
+```{r}
+asl_sport %>% 
+  filter(Date_Caught == "20Jun2019" & ScaleCardNumber == "127")
+```
+It was a typo, went and fixed it in the raw data, then re-read in ASL.
+
+### Manipulate ASL
+
+Filter for just species 410 (legal), only DNA sampled
+```{r}
+asl_sport <- asl_sport %>% 
+  filter(SPECCODE == 410) %>% 
+  filter(!is.na(SAMPLE_NO))
+```
+
+Make SITE a factor for ordering purposes
+```{r}
+asl_sport <- asl_sport %>%
+  mutate(site = factor(
+    SITE,
+    c(
+      "JUNEAU",
+      "KETCHIKAN",
+      "WRANGELL",
+      "PETERSBURG",
+      "SITKA",
+      "CRAIG_KLAWOCK",
+      "GUSTAVUS",
+      "ELFIN_COVE",
+      "YAKUTAT"
+    )
+  )) %>%
+  rename(biweek = BIWEEK) %>% 
+  mutate(Whatman_Card = str_pad(Whatman_Card, 10, "left", "0")) %>%  # pad WGC
+  # mutate(SAMPLE_NO = str_pad(SAMPLE_NO, 2, "left", "0")) %>%  # pad well
+  unite(silly_source, c("Whatman_Card", "SAMPLE_NO"), sep = "_", remove = FALSE)  # silly_source
+```
+
+Pivot harvest by biweek and site
+```{r}
+asl_sport %>% 
+  count(biweek, site) %>% 
+  spread(site, n, fill = 0)
+```
+
+Create a variable for Fishery
+```{r}
+asl_sport <- asl_sport %>%
+  mutate(
+    fishery = case_when(
+      site == "KETCHIKAN" ~ "KTN",
+      site %in% c("PETERSBURG", "WRANGELL") ~ "PB-WR",
+      site == "JUNEAU" ~ "Inside",
+      site %in% c("YAKUTAT", "GUSTAVUS", "ELFIN_COVE", "SITKA", "CRAIG_KLAWOCK") &
+        biweek <= 13 ~ "Outside_early",
+      site %in% c("YAKUTAT", "GUSTAVUS", "ELFIN_COVE", "SITKA", "CRAIG_KLAWOCK") &
+        biweek > 13 ~ "Outside_late"
+    )
+  ) %>%
+  mutate(fishery = factor(
+    fishery,
+    levels = c("KTN", "PB-WR", "Inside", "Outside_early", "Outside_late")
+  ))
+
+asl_sport %>%
+  count(biweek, fishery) %>%
+  spread(fishery, n, fill = 0)
+
+```
+
+### Read Tissue Table from *LOKI*
+
+Excellent! Next we'll pull tissue collection info from OceanAK and join, need full 10 digit WGC number and Sample number
+```{r}
+(loki_tissue_sport <- read_csv(file = "../OceanAK/GEN_SAMPLED_FISH_TISSUE_KSPORT19.csv") %>% 
+   filter(is.na(IS_MISSING_PAIRED_DATA_EXISTS)) %>%  # make sure we aren't missing the tissue
+   select(`Silly Code`, FK_FISH_ID, DNA_TRAY_CODE, DNA_TRAY_WELL_CODE, PK_TISSUE_TYPE) %>% 
+   unite(silly_source, c("DNA_TRAY_CODE", "DNA_TRAY_WELL_CODE"), sep = "_", remove = FALSE)  # silly_source
+)
+```
+
+Check out the number of digits for the Whatman Card barcode.
+```{r}
+loki_tissue_sport %>% 
+  mutate(Whatman_Card = as.numeric(DNA_TRAY_CODE)) %>% 
+  mutate(nchar = nchar(Whatman_Card)) %>% 
+  count(nchar)
+```
+
+Groovy, all 4 and 5 digit numbers, so that is great news. Matches the ASL.
+
+### Duplicates in Dna Specimen Number
+Any duplicates in *LOKI* or ASL?
+```{r}
+table(table(loki_tissue_sport$silly_source))
+table(table(asl_sport$silly_source))
+```
+
+By good grace of Allah, there are no duplicate silly_source for *LOKI* or ASL!
+
+### All ASL in *LOKI*?
+
+Check to see if all ASL fish are in *LOKI*
+```{r}
+table(asl_sport$silly_source %in% loki_tissue_sport$silly_source)
+```
+
+Damn, we are missing 9 fish. What are they?
+```{r}
+missing_sport <- setdiff(asl_sport$silly_source, loki_tissue_sport$silly_source)
+
+asl_sport %>% 
+  filter(silly_source %in% missing_sport)
+```
+
+Here are some resolutions to what was originally missing. I went back to the ASL csv and corrected the source data.  
+  - 16980 was missing the SAMPLE_NO
+  - 23782_2 was actually 32782_2
+  - 52924_5 is missing tissue in *LOKI*
+  - 5328_10 is missing tissue in *LOKI*
+  - 30484_1 has a note in ASL that says it is missing
+  - 5862_1 and _2 are both missing in *LOKI*, perhaps the card got lost?
+  - 4196_1, _2, and _3 are likely 4916, but can't know without pulling the card so I'm going to drop them...
+
+Any other fish from this card in *LOKI*?
+```{r}
+grep(pattern = "4916", x = loki_tissue_sport$silly_source, value = TRUE)
+```
+
+Get *LOKI* data that is unfiltered by "IS_MISSING_PAIRED_DATA_EXISTS"
+```{r message = FALSE}
+loki_tissue_sport_unfiltered <- read_csv(file = "../OceanAK/GEN_SAMPLED_FISH_TISSUE_KSPORT19.csv") %>% 
+   select(`Silly Code`, FK_FISH_ID, DNA_TRAY_CODE, DNA_TRAY_WELL_CODE, PK_TISSUE_TYPE, IS_MISSING_PAIRED_DATA_EXISTS) %>% 
+   unite(silly_source, c("DNA_TRAY_CODE", "DNA_TRAY_WELL_CODE"), sep = "_", remove = FALSE)
+
+grep(pattern = "5328", x = loki_tissue_sport_unfiltered$silly_source, value = TRUE)
+```
+
+Looks like we are missing 24 tissues in *LOKI* that should have been there.
+```{r}
+loki_tissue_sport_unfiltered %>% 
+  count(IS_MISSING_PAIRED_DATA_EXISTS)
+```
+
+Since we can not resolve the other 9 missing fish, let's remove them from the ASL data now, so we don't have to deal with this issue later.
+```{r}
+asl_sport <- asl_sport %>% 
+  filter(!silly_source %in% missing_sport)
+```
+
+Now are all ASL fish in *LOKI*
+```{r}
+all(asl_sport$silly_source %in% loki_tissue_sport$silly_source)
+```
+
+Baller, and no duplicates, correct?
+```{r}
+table(table(asl_sport$silly_source))
+```
+
+Victory is mine! Now go pick fish for extraction!
+```{r}
+save_objects("asl_sport", "../Objects")
+```
+
+
+### Visualize ASL data
+
+Plot samples by Stat Week and Site
+Using ggplot2 `geom_bar` (we know that there is 1 row per DNA sample)
+```{r}
+asl_sport %>% 
+  ggplot(aes(x = biweek, fill = fishery)) +
+  geom_bar() +
+  facet_wrap(~ site) +
+  ylab("# DNA Samples") +
+  ggtitle("Samples by Biweek for Sport AY19")
+```
+
+
+## Harvest Data
+
+### Read Prelim Creel Harvest Data
+
+By Site and Biweek
+```{r}
+(harvest_sport <- read_csv(file = "../Harvest Data/preliminary_2019_sport_harvest_chinook.csv"))
+```
+
+### Manipulate harvest data
+
+Make data tall (tidy), recode sites to ALL CAPS
+```{r}
+level_key <- list("Juneau" = "JUNEAU", 
+                  "Ketchikan" = "KETCHIKAN", 
+                  "Wrangell" = "WRANGELL", 
+                  "Petersburg" = "PETERSBURG", 
+                  "Sitka" = "SITKA", 
+                  "Craig" = "CRAIG_KLAWOCK", 
+                  "Gustavus" = "GUSTAVUS", 
+                  "Elfin Cove" = "ELFIN_COVE", 
+                  "Yakutat" = "YAKUTAT")
+
+harvest_sport <- harvest_sport %>% 
+  gather(site, harvest, -biweek) %>% 
+  mutate(site = recode_factor(site, !!!level_key, .ordered = TRUE))
+```
+
+Create a variable for Fishery
+```{r}
+harvest_sport <- harvest_sport %>%
+  mutate(
+    fishery = case_when(
+      site == "KETCHIKAN" ~ "KTN",
+      site %in% c("PETERSBURG", "WRANGELL") ~ "PB-WR",
+      site == "JUNEAU" ~ "Inside",
+      site %in% c("YAKUTAT", "GUSTAVUS", "ELFIN_COVE", "SITKA", "CRAIG_KLAWOCK") &
+        biweek <= 13 ~ "Outside_early",
+      site %in% c("YAKUTAT", "GUSTAVUS", "ELFIN_COVE", "SITKA", "CRAIG_KLAWOCK") &
+        biweek > 13 ~ "Outside_late"
+    )
+  ) %>%
+  mutate(fishery = factor(
+    fishery,
+    levels = c("KTN", "PB-WR", "Inside", "Outside_early", "Outside_late")
+  ))
+```
+
+Table of Harvest by site
+```{r}
+harvest_sport %>% 
+  select(-fishery) %>% 
+  spread(site, harvest, fill = 0)
+```
+
+Table of Harvest by fishery strata
+```{r}
+harvest_sport %>% 
+  group_by(fishery, biweek) %>% 
+  summarise(harvest = sum(harvest)) %>% 
+  spread(fishery,  harvest, fill = 0)
+```
+
+### Visualize Harvest
+
+Plot samples by Stat Week
+Using ggplot2 `geom_col` to plot harvest (identity)
+```{r}
+harvest_sport %>% 
+  ggplot(aes(x = biweek, y = harvest, fill = fishery)) +
+  geom_col() +
+  facet_wrap(~ site) +
+  ggtitle("Harvest by Biweek for Sport AY19")
+```
+
+Heatmap of Harvest by Stat Week and District for Sport
+```{r}
+max_bw_harvest <- max(harvest_sport$harvest)
+
+harvest_sport %>% 
+  ggplot(aes(x = biweek, y = site, fill = harvest, label = harvest)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "black", na.value = "white", limits = c(0, max_bw_harvest)) +
+  theme_classic() +
+  geom_text(color = "red") +
+  ggtitle("Sport - Harvest by Biweek and Site")
+```
+
+## Join ASL and Harvest data by Site and Biweek
+
+Roll up ASL to biweek and site level, join with harvest
+```{r}
+join_sport <- asl_sport %>%
+  count(site, biweek) %>%
+  full_join(harvest_sport, by = c("site", "biweek")) %>%  # very important to do a full join in case some weeks are missing harvest or samples
+  replace_na(list(n = 0, harvest = 0))  # replace NA in samples and harvest with 0
+
+join_sport %>%
+  filter(n > harvest)  # should be 0 rows...
+```
+
+## Sport Selection
+
+All sample size numbers come from "Associated Data/Sport/Sport Extractions - Origins.xlsx".
+The game plan is to sample each port proportional to harvest (i.e. total harvest / 2800 samples to run).
+
+Plot samples and harvest together as proportions
+```{r fig.height=10, fig.width=8}
+join_sport %>% 
+  group_by(site) %>% 
+  mutate(n = n / sum(n), harvest = harvest / sum(harvest)) %>% 
+  ungroup() %>% 
+  gather(variable, proportion, -biweek, -fishery, -site) %>% 
+  ggplot(aes(x = biweek, y = proportion, fill = variable)) +
+  geom_col() +
+  facet_grid(site ~ variable, scales = "fixed") +
+  ggtitle("Samples and Harvest by Stat Week and Quadrant for Sport AY19")
+```
+
+
+### Craig
+
+Thus the plan for extraction is to pick ~541 for CRG (proportional for 2,800 for sport)
+With the important caveat of subsampling in proportion to harvest by biweek for each port
+Business rule is to take fish from within 1 SW on either side to fill in for missing
+
+```{r}
+n_sub <- 510
+
+# What does proportional sampling look like?
+(extraction_CRG <- join_sport %>% 
+  filter(site == "CRAIG_KLAWOCK") %>% 
+  arrange(biweek) %>% 
+  mutate(p_harvest = round(harvest / sum(harvest) * n_sub)) %>%  # if we want 380 samples proportional to harvest by SW
+  mutate(n_sufficeint = n >= p_harvest) %>% 
+  mutate(n_remainings = n - p_harvest) %>% 
+  mutate(n_extract = pmin(n, p_harvest)))
+```
+
+Decided to drop the number of samples from 541 to 510 to avoid having to move fish around. Plenty of samples, so just go with n_extract.
+```{r}
+(extraction_CRG <- extraction_CRG %>% 
+    select(site, biweek, n_extract) %>% 
+    rename(n = n_extract) %>% 
+    filter(n > 0))  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+```
+
+Check sample size
+```{r}
+sum(extraction_CRG$n)
+```
+
+Randomly pick fish
+```{r warning=FALSE}
+CRG_torun <- asl_sport %>% 
+  filter(site == "CRAIG_KLAWOCK") %>% 
+  nest(-biweek, -site) %>% 
+  right_join(extraction_CRG, by = c("biweek", "site")) %>% 
+  mutate(sample = map2(data, n, sample_n)) %>% 
+  select(-data) %>% 
+  unnest(sample)
+```
+
+Verify picked fish
+```{r}
+CRG_torun %>% 
+  count(biweek)
+```
+
+
+### Sitka
+
+Thus the plan for extraction is to pick ~1123 for SIT (proportional for 2,800 for sport)
+With the important caveat of subsampling in proportion to harvest by biweek for each port
+Business rule is to take fish from within 1 SW on either side to fill in for missing
+
+```{r}
+n_sub <- 1123
+
+# What does proportional sampling look like?
+(extraction_SIT <- join_sport %>% 
+  filter(site == "SITKA") %>% 
+  arrange(biweek) %>% 
+  mutate(p_harvest = round(harvest / sum(harvest) * n_sub)) %>%  # if we want 380 samples proportional to harvest by SW
+  mutate(n_sufficeint = n >= p_harvest) %>% 
+  mutate(n_remainings = n - p_harvest) %>% 
+  mutate(n_extract = pmin(n, p_harvest)))
+```
+
+Decided to stick with 1,123 and grab fish from surrounding biweeks. Missing 5 from 9, grab from 10. Missing 16 from 16, grab 8 from 15 and 8 from 17.
+```{r}
+(extraction_SIT <- extraction_SIT %>% 
+    mutate(n_extract = case_when(biweek == 10 ~ n_extract + 5,
+                                 biweek == 15 ~ n_extract + 8,
+                                 biweek == 17 ~ n_extract + 8,
+                                 TRUE ~ n_extract)) %>% 
+    select(site, biweek, n_extract) %>% 
+    rename(n = n_extract) %>% 
+    filter(n > 0))  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+```
+
+Check sample size
+```{r}
+sum(extraction_SIT$n)
+```
+
+Randomly pick fish
+```{r warning=FALSE}
+SIT_torun <- asl_sport %>% 
+  filter(site == "SITKA") %>% 
+  nest(-biweek, -site) %>% 
+  right_join(extraction_SIT, by = c("biweek", "site")) %>% 
+  mutate(sample = map2(data, n, sample_n)) %>% 
+  select(-data) %>% 
+  unnest(sample)
+```
+
+Verify picked fish
+```{r}
+SIT_torun %>% 
+  count(biweek)
+```
+
+
+### Yakutat
+
+Thus the plan for extraction is to pick ~79 for YAK (proportional for 2,300 for sport; 71 thru BW13, 9 post BW13)
+With the important caveat of subsampling in proportion to harvest by biweek for each port
+Business rule is to take fish from within 1 SW on either side to fill in for missing
+
+**NOTE** I picked "extra" fish for Craig and Sitka, so we'll need to subsample down to get a representative mixture for the two Outside estimates (thru BW 13 + post BW 13)
+Craig: 258 and 186
+Sitka: 606 and 316
+
+```{r}
+n_sub <- 79
+
+# What does proportional sampling look like?
+(extraction_YAK <- join_sport %>% 
+  filter(site == "YAKUTAT") %>% 
+  arrange(biweek) %>% 
+  mutate(p_harvest = round(harvest / sum(harvest) * n_sub)) %>% 
+  mutate(n_sufficeint = n >= p_harvest) %>% 
+  mutate(n_remainings = n - p_harvest) %>% 
+  mutate(n_extract = pmin(n, p_harvest)))
+```
+
+Almost, missing 1 fish from BW12, but due to rounding, it adds up to 79 anyways, let it go.
+```{r}
+(extraction_YAK <- extraction_YAK %>% 
+    select(site, biweek, n_extract) %>% 
+    rename(n = n_extract) %>% 
+    filter(n > 0))  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+```
+
+Check sample size
+```{r}
+sum(extraction_YAK$n)
+```
+
+Randomly pick fish
+```{r warning=FALSE}
+YAK_torun <- asl_sport %>% 
+  filter(site == "YAKUTAT") %>% 
+  nest(-biweek, -site) %>% 
+  right_join(extraction_YAK, by = c("biweek", "site")) %>% 
+  mutate(sample = map2(data, n, sample_n)) %>% 
+  select(-data) %>% 
+  unnest(sample)
+```
+
+Verify picked fish
+```{r}
+YAK_torun %>% 
+  count(biweek)
+```
+
+
+### Gustavus
+
+Thus the plan for extraction is to pick ~13 for GUS (proportional for 2,300 for sport)
+With the important caveat of subsampling in proportion to harvest by biweek for each port
+Business rule is to take fish from within 1 SW on either side to fill in for missing
+
+**NOTE** I picked "extra" fish for Craig and Sitka, so we'll need to subsample down to get a representative mixture for the two Outside estimates (thru BW 13 + post BW 13)
+
+```{r}
+n_sub <- 13
+
+# What does proportional sampling look like?
+(extraction_GUS <- join_sport %>% 
+  filter(site == "GUSTAVUS") %>% 
+  arrange(biweek) %>% 
+  mutate(p_harvest = round(harvest / sum(harvest) * n_sub)) %>% 
+  mutate(n_sufficeint = n >= p_harvest) %>% 
+  mutate(n_remainings = n - p_harvest) %>% 
+  mutate(n_extract = pmin(n, p_harvest)))
+```
+
+Almost, missing 1 fish from BW13, grab and extra from BW12.
+```{r}
+(extraction_GUS <- extraction_GUS %>% 
+    mutate(n_extract = case_when(biweek == 12 ~ n_extract + 1,
+                                 TRUE ~ n_extract)) %>% 
+    select(site, biweek, n_extract) %>% 
+    rename(n = n_extract) %>% 
+    filter(n > 0))  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+```
+
+Check sample size
+```{r}
+sum(extraction_GUS$n)
+```
+
+Randomly pick fish
+```{r warning=FALSE}
+GUS_torun <- asl_sport %>% 
+  filter(site == "GUSTAVUS") %>% 
+  nest(-biweek, -site) %>% 
+  right_join(extraction_GUS, by = c("biweek", "site")) %>% 
+  mutate(sample = map2(data, n, sample_n)) %>% 
+  select(-data) %>% 
+  unnest(sample)
+```
+
+Verify picked fish
+```{r}
+GUS_torun %>% 
+  count(biweek)
+```
+
+
+### Elfin Cove
+
+Thus the plan for extraction is to pick ~143 for ELF (proportional for 2,300 for sport)
+With the important caveat of subsampling in proportion to harvest by biweek for each port
+Business rule is to take fish from within 1 SW on either side to fill in for missing
+
+**NOTE** I picked "extra" fish for Craig and Sitka, so we'll need to subsample down to get a representative mixture for the two Outside estimates (thru BW 13 + post BW 13)
+
+```{r}
+n_sub <- 143
+
+# What does proportional sampling look like?
+(extraction_ELF <- join_sport %>% 
+  filter(site == "ELFIN_COVE") %>% 
+  arrange(biweek) %>% 
+  mutate(p_harvest = round(harvest / sum(harvest) * n_sub)) %>% 
+  mutate(n_sufficeint = n >= p_harvest) %>% 
+  mutate(n_remainings = n - p_harvest) %>% 
+  mutate(n_extract = pmin(n, p_harvest)))
+```
+
+Missing 10 fish from BW13, grab from BW12
+```{r}
+(extraction_ELF <- extraction_ELF %>% 
+    mutate(n_extract = case_when(biweek == 12 ~ n_extract + 10,
+                                 TRUE ~ n_extract)) %>% 
+    select(site, biweek, n_extract) %>% 
+    rename(n = n_extract) %>% 
+    filter(n > 0))  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+```
+
+Check sample size
+```{r}
+sum(extraction_ELF$n)
+```
+
+Randomly pick fish
+```{r warning=FALSE}
+ELF_torun <- asl_sport %>% 
+  filter(site == "ELFIN_COVE") %>% 
+  nest(-biweek, -site) %>% 
+  right_join(extraction_ELF, by = c("biweek", "site")) %>% 
+  mutate(sample = map2(data, n, sample_n)) %>% 
+  select(-data) %>% 
+  unnest(sample)
+```
+
+Verify picked fish
+```{r}
+ELF_torun %>% 
+  count(biweek)
+```
+
+
+### Ketchikan
+
+Thus the plan for extraction is to pick ~359 for KTN (proportional for 2,800 for sport)
+With the important caveat of subsampling in proportion to harvest by biweek for each port
+Business rule is to take fish from within 1 SW on either side to fill in for missing
+
+```{r}
+n_sub <- 359
+
+# What does proportional sampling look like?
+(extraction_KTN <- join_sport %>% 
+  filter(site == "KETCHIKAN") %>% 
+  arrange(biweek) %>% 
+  mutate(p_harvest = round(harvest / sum(harvest) * n_sub)) %>% 
+  mutate(n_sufficeint = n >= p_harvest) %>% 
+  mutate(n_remainings = n - p_harvest) %>% 
+  mutate(n_extract = pmin(n, p_harvest)))
+```
+
+Missing 17 fish from BW11, grab from BW12. Missing 5 from BW18, grab from BW17
+```{r}
+(extraction_KTN <- extraction_KTN %>% 
+    mutate(n_extract = case_when(biweek == 12 ~ n_extract + 17,
+                                 biweek == 17 ~ n_extract + 5,
+                                 TRUE ~ n_extract)) %>% 
+    select(site, biweek, n_extract) %>% 
+    rename(n = n_extract) %>% 
+    filter(n > 0))  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+```
+
+Check sample size
+```{r}
+sum(extraction_KTN$n)
+```
+
+Randomly pick fish
+```{r warning=FALSE}
+KTN_torun <- asl_sport %>% 
+  filter(site == "KETCHIKAN") %>% 
+  nest(-biweek, -site) %>% 
+  right_join(extraction_KTN, by = c("biweek", "site")) %>% 
+  mutate(sample = map2(data, n, sample_n)) %>% 
+  select(-data) %>% 
+  unnest(sample)
+```
+
+Verify picked fish
+```{r}
+KTN_torun %>% 
+  count(biweek)
+```
+
+
+### Juneau
+
+Thus the plan for extraction is to pick ~402 for JNU (proportional for 2,800 for sport)
+With the important caveat of subsampling in proportion to harvest by biweek for each port
+Business rule is to take fish from within 1 SW on either side to fill in for missing
+
+```{r}
+n_sub <- 331
+
+# What does proportional sampling look like?
+(extraction_JNU <- join_sport %>% 
+  filter(site == "JUNEAU") %>% 
+  arrange(biweek) %>% 
+  mutate(p_harvest = round(harvest / sum(harvest) * n_sub)) %>% 
+  mutate(n_sufficeint = n >= p_harvest) %>% 
+  mutate(n_remainings = n - p_harvest) %>% 
+  mutate(n_extract = pmin(n, p_harvest)))
+```
+
+Dropped from 402 to 331 due to sample size issues (proportional to harvest). Since we already ran a bunch of fish from BW12-14 for TBR, need to reduce sample size based on the "Sport Extractions - Origins.xlsx"
+```{r}
+(extraction_JNU <- extraction_JNU %>% 
+    mutate(n_extract = case_when(biweek == 12 ~ 21,
+                                 biweek == 13 ~ 44,
+                                 biweek == 14 ~ 11,
+                                 TRUE ~ n_extract)) %>% 
+    select(site, biweek, n_extract) %>% 
+    rename(n = n_extract) %>% 
+    filter(n > 0))  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+```
+
+Check sample size
+```{r}
+sum(extraction_JNU$n)
+```
+
+Randomly pick fish, *after removing fish already run for TBR*
+```{r warning=FALSE}
+JNU_torun <- asl_sport %>% 
+  filter(site == "JUNEAU") %>% 
+  filter(!silly_source %in% sport_tbr_torun_asl$silly_source) %>% 
+  nest(-biweek, -site) %>% 
+  right_join(extraction_JNU, by = c("biweek", "site")) %>% 
+  mutate(sample = map2(data, n, sample_n)) %>% 
+  select(-data) %>% 
+  unnest(sample)
+```
+
+Verify picked fish
+```{r}
+JNU_torun %>% 
+  count(biweek)
+```
+
+Verify TBR ASL
+```{r}
+filter(sport_tbr_torun_asl, SITE == "JUNEAU") %>% 
+  count(BIWEEK)
+```
+
+
+### Petersburg
+
+Thus the plan for extraction is to pick ~48 for PBG (proportional for 2,300 for sport)
+With the important caveat of subsampling in proportion to harvest by biweek for each port
+Business rule is to take fish from within 1 SW on either side to fill in for missing
+
+```{r}
+n_sub <- 48
+
+# What does proportional sampling look like?
+(extraction_PBG <- join_sport %>% 
+  filter(site == "PETERSBURG") %>% 
+  arrange(biweek) %>% 
+  mutate(p_harvest = round(harvest / sum(harvest) * n_sub)) %>% 
+  mutate(n_sufficeint = n >= p_harvest) %>% 
+  mutate(n_remainings = n - p_harvest) %>% 
+  mutate(n_extract = pmin(n, p_harvest)))
+```
+
+Since we already ran a bunch of fish from BW12-14 for TBR, need to reduce sample size based on the "Sport Extractions - Origins.xlsx"
+```{r}
+(extraction_PBG <- extraction_PBG %>% 
+    mutate(n_extract = case_when(biweek == 12 ~ 13,
+                                 biweek == 13 ~ 2,
+                                 biweek == 14 ~ 1,
+                                 TRUE ~ n_extract)) %>% 
+    select(site, biweek, n_extract) %>% 
+    rename(n = n_extract) %>% 
+    filter(n > 0))  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+```
+
+Check sample size
+```{r}
+sum(extraction_PBG$n)
+```
+
+Randomly pick fish, *after removing fish already run for TBR*
+```{r warning=FALSE}
+PBG_torun <- asl_sport %>% 
+  filter(site == "PETERSBURG") %>% 
+  filter(!silly_source %in% sport_tbr_torun_asl$silly_source) %>% 
+  nest(-biweek, -site) %>% 
+  right_join(extraction_PBG, by = c("biweek", "site")) %>% 
+  mutate(sample = map2(data, n, sample_n)) %>% 
+  select(-data) %>% 
+  unnest(sample)
+```
+
+Verify picked fish
+```{r}
+PBG_torun %>% 
+  count(biweek)
+```
+
+Verify TBR ASL
+```{r}
+filter(sport_tbr_torun_asl, SITE == "PETERSBURG") %>% 
+  count(BIWEEK)
+```
+
+
+### Wrangell
+
+Thus the plan for extraction is to pick ~52 for WRN (proportional for 2,300 for sport)
+With the important caveat of subsampling in proportion to harvest by biweek for each port
+Business rule is to take fish from within 1 SW on either side to fill in for missing
+
+```{r}
+n_sub <- 52
+
+# What does proportional sampling look like?
+(extraction_WRN <- join_sport %>% 
+  filter(site == "WRANGELL") %>% 
+  arrange(biweek) %>% 
+  mutate(p_harvest = round(harvest / sum(harvest) * n_sub)) %>% 
+  mutate(n_sufficeint = n >= p_harvest) %>% 
+  mutate(n_remainings = n - p_harvest) %>% 
+  mutate(n_extract = pmin(n, p_harvest)))
+```
+
+Since we already ran 4 fish from BW13 for TBR, need to reduce sample size based on the "Sport Extractions - Origins.xlsx". Also need to replace missing fish from BW11, 16, and 17 if possible.
+```{r}
+(extraction_WRN <- extraction_WRN %>% 
+    mutate(n_extract = case_when(biweek == 12 ~ n_extract + 1,
+                                 biweek == 13 ~ 8,
+                                 biweek == 15 ~ n_extract + 5,
+                                 TRUE ~ n_extract)) %>% 
+    select(site, biweek, n_extract) %>% 
+    rename(n = n_extract) %>% 
+    filter(n > 0))  # can only keep rows > 0, otherwise nest doesn't work for picking fish
+```
+
+Check sample size
+```{r}
+sum(extraction_WRN$n)
+```
+
+Randomly pick fish, *after removing fish already run for TBR*
+```{r warning=FALSE}
+WRN_torun <- asl_sport %>% 
+  filter(site == "WRANGELL") %>% 
+  filter(!silly_source %in% sport_tbr_torun_asl$silly_source) %>% 
+  nest(-biweek, -site) %>% 
+  right_join(extraction_WRN, by = c("biweek", "site")) %>% 
+  mutate(sample = map2(data, n, sample_n)) %>% 
+  select(-data) %>% 
+  unnest(sample)
+```
+
+Verify picked fish
+```{r}
+WRN_torun %>% 
+  count(biweek)
+```
+
+Verify TBR ASL
+```{r}
+filter(sport_tbr_torun_asl, SITE == "WRANGELL") %>% 
+  count(BIWEEK)
+```
+
+
+### Sport Extraction
+
+Save each individual list
+```{r}
+save_objects(
+  objects = c(
+    "CRG_torun",
+    "SIT_torun",
+    "KTN_torun",
+    "JNU_torun",
+    "PBG_torun",
+    "WRN_torun",
+    "YAK_torun",
+    "GUS_torun",
+    "ELF_torun"
+  ),
+  path = "../Objects/"
+)
+```
+
+Combine list and save
+```{r}
+sport_torun_asl <-
+  bind_rows(
+    CRG_torun,
+    SIT_torun,
+    KTN_torun,
+    JNU_torun,
+    PBG_torun,
+    WRN_torun,
+    YAK_torun,
+    GUS_torun,
+    ELF_torun
+  )
+save_objects(objects = "sport_torun_asl", path = "../Objects/")
+
+sport_torun_asl %>% 
+  count(site)
+```
+
+```{r}
+nrow(sport_torun_asl)
+
+nrow(sport_torun_asl) / 95
+```
+
+## Write Sport Extraction List
+
+We already dealt with duplicate and missing issues at the beginning, so this should all be perfunctory and check out.
+
+### Compare with *LOKI*
+Are all my extraction fish in the LOKI tissue table?
+```{r}
+table(sport_torun_asl$silly_source %in% loki_tissue_sport$silly_source)
+```
+
+Fuck ya, and no duplicates?
+```{r}
+table(table(sport_torun_asl$silly_source))
+```
+
+VICTORY!!!!
+
+Now I just need to write this MF out and we'll be good to go.
+
+### Format
+
+Join LOKI Tissue Table with ASL and format for Extraction List Template
+```{r}
+(sport_torun_extraction <- sport_torun_asl %>% 
+   left_join(loki_tissue_sport, by = "silly_source") %>% 
+   mutate(`WELL CODE` = str_pad(DNA_TRAY_WELL_CODE, width = 2, side = "left", pad = 0)) %>% 
+   mutate(`TISSUE TYPE` = str_replace(PK_TISSUE_TYPE, pattern = " Process", replacement = "")) %>% 
+   mutate(`TISSUE TYPE` = str_replace(`TISSUE TYPE`, pattern = " Clip", replacement = "")) %>% 
+   rename(SILLY = `Silly Code`, `SAMPLE #` = FK_FISH_ID, `WGC BARCODE` = `DNA_TRAY_CODE`) %>% 
+   select(SILLY, `SAMPLE #`, `WGC BARCODE`, `WELL CODE`, `TISSUE TYPE`) %>% 
+   arrange(SILLY, `WGC BARCODE`, `WELL CODE`)
+)
+```
+
+### Write
+```{r}
+write_csv(sport_torun_extraction, path = "../Extraction Lists/Sport_Origins_Extraction.csv")
+
+sport_torun_extraction %>% 
+  count(SILLY, `TISSUE TYPE`)
+```
