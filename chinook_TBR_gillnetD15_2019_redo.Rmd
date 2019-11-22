@@ -741,7 +741,7 @@ D115Gill_2019.gcl$attributes %>%
   count(`Stat Week`)
 ```
 
-# Re-Do D151 Gillnet
+# Re-Do D115 Gillnet
 
 I picked fish for extraction from SW 25-29 at the end of SW34, however, it looks like the harvest numbers were incorrect (late fish tickets). Need to run each week separately and stratify across weeks according to harvest. Not planning to run any more fish.
 
@@ -770,6 +770,13 @@ D115Gill_2019.gcl$attributes %>%
    filter(!is.na(`Dna Specimen No`))
 )
 ```
+
+```{r}
+asl_gillnet %>% 
+  filter(District == 115) %>% 
+  count(`Stat Week`)
+```
+
 
 ## Join attributes
 
@@ -869,7 +876,7 @@ sapply(D115Gill_mixnames, function(mix) {dir.create(paste0("../BAYES/Output/", m
 Generate stratified estimate for D115 SW25-29.
 ```{r D115_stratified_33RG}
 D115Gill_2019_33RG_StratifiedEstimatesStats <- 
-  StratifiedEstimator.GCL(groupvec = 1:33, groupnames = GroupNames33, maindir = "../BAYES/Output/", mixvec = D115Gill_mixnames, catchvec = c(153, 118, 145, 132, 139), newname = "D115Gill_2019", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
+  StratifiedEstimator.GCL(groupvec = 1:33, groupnames = GroupNames33, maindir = "../BAYES/Output/", mixvec = D115Gill_mixnames, catchvec = c(157, 132, 161, 196, 216), newname = "D115Gill_2019", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
 
 save_objects("D115Gill_2019_33RG_StratifiedEstimatesStats", "../Estimates objects")
 ```
