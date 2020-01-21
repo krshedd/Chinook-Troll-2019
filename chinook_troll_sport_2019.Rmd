@@ -546,3 +546,855 @@ LWint_2019_4RG_StratifiedEstimatesStats <-
 save_objects(c("EWint_2019_4RG_StratifiedEstimatesStats", "LWint_2019_4RG_StratifiedEstimatesStats"), "../Estimates objects")
 ```
 
+
+# Spring troll: import mixture genotypes
+
+Read in genotypes from *LOKI* as `.gcl` objects. Save in directory.
+```{r spring_loki}
+spring_2019_sillys <- c("KTROL19SP")
+LOKI2R_GAPS.GCL(sillyvec = spring_2019_sillys, username = .username, password = .password)
+rm(.username, .password)
+
+sapply(spring_2019_sillys, function(silly) {get(paste0(silly, ".gcl"))$n} )
+
+save_sillys(sillyvec = spring_2019_sillys, path = "../Genotypes/original")
+save_objects(objects = c("spring_2019_sillys"), path = "../Objects/")
+```
+
+Reload genotypes.
+```{r}
+load_sillys(path = "../Genotypes/original/", sillyvec = spring_2019_sillys)
+```
+
+
+# Join ASL
+
+## Spring Troll
+
+Read in the spring troll ASL data **with District/Sub-District data from Iris**.
+```{r spring_troll_asl, message=FALSE}
+(asl_spring <- read_csv(file = "../Associated Data/Spring/2019 Spring Troll Chinook with Dist Sub Dist (version 1).csv") %>% 
+   filter(!is.na(`Dna Specimen No`)))
+
+# Any duplicate Dna Specimen No?
+table(table(asl_spring$`Dna Specimen No`, useNA = "always"), useNA = "always")
+```
+
+Now how about duplicate Dna Specimen No?
+```{r}
+table(table(asl_spring$`Dna Specimen No`))
+```
+
+OMG, thank goodness. No more problems.
+
+Are any of these fish in our spring troll samples?
+```{r asl_duplicates_spring_troll}
+spring_samples <- KTROL19SP.gcl$attributes %>% 
+  mutate(`Dna Specimen No` = as.integer(paste0(str_sub(DNA_TRAY_CODE, 7, 10), str_pad(DNA_TRAY_WELL_CODE, 2, "left", "0")))) %>% 
+  pull(`Dna Specimen No`)
+```
+
+Cool, none of our ASL duplicate Dna Specimen No are in there. Now verify that all spring samples are in the ASL data.
+```{r spring_in_asl_check}
+all(spring_samples %in% asl_spring$`Dna Specimen No`)
+```
+
+Fuck, not all of our genotyped samples appear in the ASL. How many are "missing"?
+```{r spring_in_asl_table}
+table(spring_samples %in% asl_spring$`Dna Specimen No`)
+```
+
+Crap, we have 7 fish that were genotyped, but not in the ASL. What gives? We should have solved this at extraction!
+```{r}
+(missing_fish <- setdiff(spring_samples, asl_spring$`Dna Specimen No`))
+```
+
+Went and checked the *extraction_list* notebook and it looks like these samples were all flagged there for ASL vs. LOKI discrepancies.
+
+Change ASL to match what is in LOKI  
+  * 4969 = 4696
+  * 5743 = 5473
+  * 25711 = 25710
+```{r}
+asl_spring <- asl_spring %>%
+  mutate(`Dna Specimen No` = as.numeric(
+    str_replace(
+      string = as.character(`Dna Specimen No`),
+      pattern = "4969",
+      replacement = "4696"
+    )
+  )) %>%
+  mutate(`Dna Specimen No` = as.numeric(
+    str_replace(
+      string = as.character(`Dna Specimen No`),
+      pattern = "5743",
+      replacement = "5473"
+    )
+  )) %>%
+  mutate(`Dna Specimen No` = as.numeric(
+    str_replace(
+      string = as.character(`Dna Specimen No`),
+      pattern = "25711",
+      replacement = "25710"
+    )
+  ))
+```
+
+Now how about duplicate Dna Specimen No?
+```{r}
+table(table(asl_spring$`Dna Specimen No`))
+```
+
+Now verify that all spring samples are in the ASL data.
+```{r spring_in_asl}
+all(spring_samples %in% asl_spring$`Dna Specimen No`)
+```
+
+OMG, thank goodness. No more problems. Add additional columns.
+```{r}
+(asl_spring <- asl_spring %>% 
+   mutate(`Sample Date` = mdy(`Sample Date`)) %>% 
+   mutate(Year_f = factor(Year)) %>% 
+   mutate(Fishery = case_when(Harvest == "Spring Troll Fishery" ~ "Spring")) %>% 
+   mutate(Fishery = factor(Fishery, levels = c("Late Winter", "Spring", "Summer Ret 1", "Summer Ret 2", "Early Winter"))) %>% 
+   mutate(Month = case_when(`Stat Week` <= 22 ~ "May",
+                            `Stat Week` >= 23 ~ "June")) %>%  # update! anything SW22 and less is May
+   mutate(Month = factor(Month, levels = c("May", "June"))) %>% 
+   mutate(month = month(`Sample Date`, label = TRUE, abbr = FALSE)) %>% 
+   mutate(subdistrict = str_pad(string = `Sub-District`, width = 2, side = "left", pad = "0")) %>% 
+   unite("Stat Area", c(District, subdistrict), sep = '', remove = FALSE)
+)
+```
+
+Save ASL.
+```{r}
+write_csv(x = asl_spring, path = "../ASL Data/spring_troll_samples_ASL.csv")
+```
+
+Now that we've resolved our ASL discrepancy, join with attributes to get quadrant level information.
+```{r join_spring_asl}
+# Join ASL with attributes table
+KTROL19SP.gcl$attributes <- KTROL19SP.gcl$attributes %>% 
+  mutate(`Dna Specimen No` = as.integer(paste0(str_sub(DNA_TRAY_CODE, 7, 10), str_pad(DNA_TRAY_WELL_CODE, 2, "left", "0")))) %>% 
+  left_join(asl_spring, by = "Dna Specimen No") 
+```
+
+How many fish per Stat Area and Month?
+```{r spring_district_counts}
+KTROL19SP.gcl$attributes %>% 
+  count(`Stat Area`, Month) %>% 
+  spread(Month, n, fill = 0)
+```
+
+
+# Define mixture strata
+
+Spring mixtures are each stat area and month by itself (except 113-30 and 183-10, which are combined for May and June). Use `case_when` to creat an attribute in the attributes table for mixture.
+```{r spring_mixture_attribute}
+KTROL19SP.gcl$attributes <- KTROL19SP.gcl$attributes %>% 
+  mutate(mixname = case_when(`Stat Area` == "10145" & Month == "June" ~ "SpringRet2_10145_2019",
+                             `Stat Area` == "10146" & Month == "June" ~ "SpringRet2_10146_2019",
+                             `Stat Area` == "10350" & Month == "May" ~ "SpringRet1_10350_2019",
+                             `Stat Area` == "10350" & Month == "June" ~ "SpringRet2_10350_2019",
+                             `Stat Area` == "11301" & Month == "June" ~ "SpringRet2_11301_2019",
+                             `Stat Area` == "11330" & Month == "May" ~ "SpringRet1_11330_2019",
+                             `Stat Area` == "11330" & Month == "June" ~ "SpringRet2_11330_2019",
+                             `Stat Area` == "11341" & Month == "May" ~ "SpringRet1_11341_2019",
+                             `Stat Area` == "11341" & Month == "June" ~ "SpringRet2_11341_2019",
+                             `Stat Area` == "11362" & Month == "May" ~ "SpringRet1_11362_2019",
+                             `Stat Area` == "11362" & Month == "June" ~ "SpringRet2_11362_2019",
+                             `Stat Area` == "18310" & Month == "May" ~ "SpringRet1_18310_2019",
+                             `Stat Area` == "18310" & Month == "June" ~ "SpringRet2_18310_2019",
+                             TRUE ~ as.character(NA)))
+
+KTROL19SP.gcl$attributes %>% 
+  count(mixname)
+```
+
+Create spring mixtures.
+```{r spring_define_mixtures}
+spring_2019_mixnames <- sort(unique(KTROL19SP.gcl$attributes$mixname))
+
+sapply(spring_2019_mixnames, function(mixname) {
+  ids <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL19SP", attribute = "mixname", matching = mixname)), nm = "KTROL19SP")
+  PoolCollections.GCL(collections = "KTROL19SP", loci = GAPSLoci_reordered, IDs = ids, newname = mixname)
+})
+
+sapply(spring_2019_mixnames, function(silly) {get(paste0(silly, ".gcl"))$n} )
+```
+
+Save genotypes for spring strata.
+```{r save_spring_strata_genotypes}
+if(!dir.exists("../Genotypes/strata")) {dir.create("../Genotypes/strata")}
+
+save_objects(objects = "spring_2019_mixnames", path = "../Objects/")
+save_sillys(sillyvec = spring_2019_mixnames, path = "../Genotypes/strata/")
+```
+
+# Data QA
+
+Standard data QA:
+
+  * Remove fish missing <80% genotypes
+  * Remove duplicates (>95% genotype concordance)
+
+```{r spring_QA}
+# original sample sizes
+spring_2019_sample_sizes <- tibble(silly = spring_2019_mixnames,
+                                   genotyped = sapply(spring_2019_mixnames, function(x) {
+                                     get(paste0(x, ".gcl"))$n
+                                   }))
+
+# missing
+spring_2019_missing <-
+  RemoveIndMissLoci.GCL(sillyvec = spring_2019_mixnames, proportion = 0.8)
+
+save_objects("spring_2019_missing", "../Objects/")
+
+spring_2019_sample_sizes <- spring_2019_sample_sizes %>%
+  mutate(missing = genotyped - sapply(spring_2019_mixnames, function(x) {
+    get(paste0(x, ".gcl"))$n
+  }))
+
+# duplicate
+spring_2019_duplicates <-
+  CheckDupWithinSilly.GCL(
+    sillyvec = spring_2019_mixnames,
+    loci = GAPSLoci_reordered,
+    quantile = NULL,
+    minproportion = 0.95
+  )
+
+(spring_2019_duplicates_summary <-
+    sapply(spring_2019_mixnames, function(x) {
+      spring_2019_duplicates[[x]]$report
+    }))
+
+save_objects("spring_2019_duplicates_summary", "../Objects/")
+
+spring_2019_duplciates_removed <-
+  RemoveDups.GCL(dupcheck = spring_2019_duplicates)
+
+spring_2019_sample_sizes <- spring_2019_sample_sizes %>%
+  mutate(duplicate = genotyped - missing - sapply(spring_2019_mixnames, function(x) {
+    get(paste0(x, ".gcl"))$n
+  }))
+
+# final
+spring_2019_sample_sizes <- spring_2019_sample_sizes %>%
+  mutate(final = sapply(spring_2019_mixnames, function(x) {
+    get(paste0(x, ".gcl"))$n
+  }))
+
+spring_2019_sample_sizes
+
+save_objects("spring_2019_sample_sizes", "../Objects/")
+
+write_csv(spring_2019_sample_sizes,
+          "../Tables/spring_2019_sample_sizes.csv")
+```
+
+Save post-QA genotypes
+```{r spring_post_QA}
+if(!dir.exists("../Genotypes/strata_postQA/")) {dir.create("../Genotypes/strata_postQA/")}
+save_sillys(sillyvec = spring_2019_mixnames, path = "../Genotypes/strata_postQA")
+```
+
+# Create *BAYES* files
+
+## Directory setup
+
+First need to set up *BAYES* directory structure and copy over baseline file and *BAYES* objects. This was already done when we ran TBR.
+
+
+## Create mixtures
+
+Save the fortran format and create TBR *BAYES* mixture files. This was already done when we ran TBR.
+```{r spring_BAYES_mixtures}
+# mixfortran <- CreateMixture.GCL(sillys = TBR_sillys[1], loci = GAPSLoci_reordered, IDs = NULL, mixname = TBR_mixnames[TBR_sillys[1]], dir = "../BAYES/Mixture", type = "BAYES", PT = FALSE)
+# save_objects("mixfortran", "../Objects/")
+
+sapply(spring_2019_mixnames, function(mix) {
+  CreateMixture.GCL(sillys = mix, loci = GAPSLoci_reordered, IDs = NULL, mixname = mix, dir = "../BAYES/Mixture", type = "BAYES", PT = FALSE)
+} )
+```
+
+## Create priors
+
+Get estimates from 2018 to set priors
+```{r}
+load_objects(path = "../../SEAK18/Estimates objects/", pattern = "spring_2018_33RG_estimates.tdy")
+```
+
+Spread out object in to a matrix with rows as reporting group and columns as mixture
+```{r}
+spring_2018_means_33RG <- spring_2018_33RG_estimates.tdy %>% 
+  filter(estimator == "mean") %>% 
+  select(group, mixname, value) %>% 
+  spread(mixname, value) %>% 
+  column_to_rownames("group") %>% 
+  as.matrix()
+
+dimnames(spring_2018_means_33RG)
+```
+
+What are 2019 mixtures?
+```{r}
+spring_2019_mixnames
+```
+
+Line up 2018 vs. 2019 mixtures for seeting priors
+```{r}
+cbind("2018" = colnames(spring_2018_means_33RG[, c(4, 1, 5, 10, 2, 3, 3, 7, 8, 1, 9, 10, 2)]), 
+      "2019" = spring_2019_mixnames)
+```
+
+Create means for priors and rename to 2019 mixnames
+```{r}
+# Duplicate NISISO to NI, SI, SO
+spring_2018_means_33RG <- spring_2018_means_33RG[, c(4, 1, 5, 10, 2, 3, 3, 7, 8, 1, 9, 10, 2)]
+
+# Fix dimnames
+colnames(spring_2018_means_33RG) <- spring_2019_mixnames
+
+# Verify
+apply(spring_2018_means_33RG, 2, sum)
+```
+
+Now create 2019 priors.
+```{r spring_create_2019_priors}
+spring_2019_priors <- apply(spring_2018_means_33RG, 2, function(mix) {
+  Prior.GCL(groupvec = GroupVec33RG_357, groupweights = mix, minval = 0.01)
+} )
+
+colnames(spring_2019_priors) <- spring_2019_mixnames
+
+save_objects("spring_2019_priors", "../Objects/")
+```
+
+## Create control files
+
+Now that we have priors, just need to create *BAYES* control files.
+```{r spring_BAYES_control}
+sapply(spring_2019_mixnames, function(mix) {
+  CreateControlFile.GCL(
+    sillyvec = SEAKPops357,
+    loci = GAPSLoci_reordered,
+    mixname = mix,
+    basename = "GAPS357pops13loci",
+    suffix = "",
+    nreps = 40000,
+    nchains = 5,
+    groupvec = GroupVec33RG_357,
+    priorvec = spring_2019_priors[, mix],
+    initmat = GAPS357PopsInits,
+    dir = "../BAYES/Control",
+    seeds = WASSIPSockeyeSeeds,
+    thin = c(1, 1, 100),
+    mixfortran = mixfortran,
+    basefortran = bayesfortran_357,
+    switches = "F T F T F T F"
+  )
+})
+```
+
+## Create output directories
+
+```{r spring_BAYES_output}
+sapply(spring_2019_mixnames, function(mix) {dir.create(paste0("../BAYES/Output/", mix))} )
+```
+
+## Running *BAYES*
+
+Look at mixtures in order of sample size to maximize efficiency while I'm here.
+```{r}
+spring_2019_sample_sizes %>% 
+  arrange(final)
+```
+
+# Summarize *BAYES* results
+
+Summarize results for both the full 33 reporting groups, the 5 TBR groups, 3 TBR groups, and 2 TBR groups.
+
+## 33 reporting groups
+
+Create standard summary and save.
+```{r spring_BAYES_summarise_33RG}
+# full 33 reporting groups
+Spring_2019_33RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = 1:33, groupnames = GroupNames33, maindir = "../BAYES/Output", mixvec = spring_2019_mixnames,
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+# dir.create("../Estimates objects")
+save_objects(c("Spring_2019_33RG_EstimatesStats"), "../Estimates objects")
+```
+
+Make in to tall tibble.
+```{r spring_BAYES_33RG_tibble}
+# make in to a tidy tibble (tall)
+spring_2019_33RG_estimates.tdy <- 
+  bind_rows(
+    lapply(spring_2019_mixnames, function(mix) {  # loop over mixture names
+      c(Spring_2019_33RG_EstimatesStats)[[mix]] %>%  # for each matrix
+        as_tibble(rownames = "group") %>%  # make tibble with rownames as group
+        mutate(mixname = mix) %>%  # make column for mixname
+        mutate(n_group = n_distinct(group))  # make column for number of groups
+    } )
+  ) %>% 
+  gather(estimator, value, -mixname, -group, - n_group) %>%  # gather all estimators
+  separate(mixname, c("period", "stat_area", "year"), sep = "_", remove = FALSE) %>%  # extract mixture and year
+  mutate(estimator = factor(estimator, c("mean", "sd", "5%", "95%", "median", "P=0", "GR"))) %>%  # factor for ordering
+  mutate(group = factor(group, GroupNames33))  # factor for ordering
+
+save_objects(c("spring_2019_33RG_estimates.tdy"), "../Estimates objects")
+```
+
+Check GR
+```{r spring_GR}
+spring_2019_33RG_estimates.tdy %>% 
+  filter(estimator == "GR") %>% 
+  filter(value > 1.2)
+```
+
+This is why we report to Interior Columbia Su/Fa, not to summer and fall separately.
+
+## 5 reporting groups
+
+Create standard summary and tall tibble, save both.
+```{r BAYES_summarise_spring_5RG}
+Spring_2019_5RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = GroupVec5RG_THA_33, groupnames = GroupNames5_THA, maindir = "../BAYES/Output", 
+                               mixvec = spring_2019_mixnames,
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+# make in to a tidy tibble (tall)
+spring_2019_5RG_estimates.tdy <- 
+  bind_rows(
+    lapply(spring_2019_mixnames, function(mix) {  # loop over mixture names
+      c(Spring_2019_5RG_EstimatesStats)[[mix]] %>%  # for each matrix
+        as_tibble(rownames = "group") %>%  # make tibble with rownames as group
+        mutate(mixname = mix) %>%  # make column for mixname
+        mutate(n_group = n_distinct(group))  # make column for number of groups
+    } )
+  ) %>% 
+  gather(estimator, value, -mixname, -group, - n_group) %>%  # gather all estimators
+  separate(mixname, c("period", "stat_area", "year"), sep = "_", remove = FALSE) %>%  # extract mixture and year
+  mutate(estimator = factor(estimator, c("mean", "sd", "5%", "95%", "median", "P=0", "GR"))) %>%  # factor for ordering
+  mutate(group = factor(group, GroupNames5_THA))  # factor for ordering
+
+save_objects(c("Spring_2019_5RG_EstimatesStats", "spring_2019_5RG_estimates.tdy"), "../Estimates objects")
+```
+
+# Harvest - Spring troll
+
+Read in harvest data
+
+```{r spring_harvest}
+(spring_harvest <- read_csv("../Harvest Data/ft - Detailed Fish Tickets_spring.csv") %>% 
+  mutate(Month = month(`Date Fishing Ended`, label = TRUE, abbr = FALSE)) %>% 
+  group_by(District, `Stat Area`, Month) %>% 
+  summarise(Harvest = sum(`Number Of Animals (sum)`, na.rm = TRUE)))
+```
+
+```{r spring_troll_figures, out.width="100%"}
+spring_2019_33RG_estimates.tdy %>% 
+  spread(estimator, value) %>% 
+  filter(mean > 0.05) %>% 
+  arrange(mixname, desc(mean))
+
+spring_2019_33RG_estimates.tdy %>% 
+  spread(estimator, value) %>% 
+  filter(stat_area == "10145") %>% 
+  mutate(month = case_when(period == "SpringRet1" ~ "May",
+                           period == "SpringRet2" ~ "June", 
+                           period == "Spring" ~ "Spring")) %>% 
+  mutate(month = factor(x = month, levels = month.name)) %>% 
+  ggplot(aes(x = group, y = mean * 100)) +
+  geom_col(fill = "lightblue") +
+  geom_errorbar(aes(ymin = `5%` * 100, ymax = `95%` * 100)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  ylab("Stock Composition (%)") +
+  xlab("Reporting Group") +
+  ggtitle("Spring Troll AY 2019: Mountain Point 101-45") +
+  facet_grid(. ~ month)
+```
+
+
+# Summer troll: import mixture genotypes
+
+Read in genotypes from *LOKI* as `.gcl` objects. Save in directory.
+```{r summer_loki}
+summer_2019_sillys <- c("KTROL19SU")
+LOKI2R_GAPS.GCL(sillyvec = summer_2019_sillys, username = .username, password = .password)
+rm(.username, .password)
+
+sapply(summer_2019_sillys, function(silly) {get(paste0(silly, ".gcl"))$n} )
+
+save_sillys(sillyvec = summer_2019_sillys, path = "../Genotypes/original")
+save_objects(objects = c("summer_2019_sillys"), path = "../Objects/")
+```
+
+# Join ASL
+
+## Summer Troll
+
+Read in the troll ASL data.
+```{r read_troll_asl, message=FALSE}
+(
+  troll_ASL <-
+    read_csv(file = "../ASL Data/20191021_Detailed ASL Samples.csv") %>%
+    select(
+      Year,
+      `Sample Date`,
+      `Stat Week`,
+      `Port Code`,
+      `Gear`,
+      `District`,
+      `Dna Specimen No`,
+      `Cwt Strap Tag No`,
+      `Gear Code`,
+      `Harvest Code`
+    )
+)
+
+# Any duplicate Dna Specimen No?
+table(table(troll_ASL$`Dna Specimen No`, useNA = "always"), useNA = "always")
+```
+
+Filter for just summer troll fish to avoid this maddness.
+```{r}
+(asl_summer <- troll_ASL %>% 
+   mutate(Year_f = factor(Year)) %>% 
+   dplyr::rename(Quadrant = District) %>% 
+   mutate(Fishery = case_when(`Harvest Code` == 13 ~ "Spring",
+                              `Harvest Code` == 11 & `Stat Week` <= 11 ~ "Late Winter",
+                              `Harvest Code` == 11 & `Stat Week` >= 41 ~ "Early Winter",
+                              `Harvest Code` == 11 & `Stat Week` >= 27 & `Stat Week` <= 31 ~ "Summer Ret 1",
+                              `Harvest Code` == 11 & `Stat Week` >= 32 & `Stat Week` <= 36 ~ "Summer Ret 2")) %>% 
+   mutate(Fishery = factor(Fishery, levels = c("Late Winter", "Spring", "Summer Ret 1", "Summer Ret 2", "Early Winter"))) %>% 
+   filter(Year == 2019 & Fishery %in% c("Summer Ret 1", "Summer Ret 2"))
+)
+```
+
+Now how about duplicate Dna Specimen No?
+```{r}
+table(table(asl_summer$`Dna Specimen No`))
+```
+
+Damnit why are there so many...
+```{r summer_asl_duplicates}
+asl_summer_duplicates <- asl_summer %>% 
+  group_by(`Dna Specimen No`) %>% 
+  summarise(n = n()) %>% 
+  filter(n > 1) %>% 
+  pull(`Dna Specimen No`)
+
+asl_summer %>% 
+  filter(`Dna Specimen No` %in% asl_summer_duplicates) %>% 
+  arrange(`Dna Specimen No`)
+```
+
+Are any of these fish in our summer troll samples?
+```{r asl_duplicates_summer_troll}
+summer_samples <- KTROL19SU.gcl$attributes %>% 
+  mutate(`Dna Specimen No` = as.integer(paste0(str_sub(DNA_TRAY_CODE, 7, 10), str_pad(DNA_TRAY_WELL_CODE, 2, "left", "0")))) %>%
+  pull(`Dna Specimen No`)
+
+table(summer_samples %in% asl_summer_duplicates)
+```
+
+Which ones?
+```{r}
+intersect(summer_samples, asl_summer_duplicates)
+```
+
+What are the duplicate cards? Which ports?
+```{r}
+asl_summer %>% 
+  mutate(WGC_4digit = str_sub(string = `Dna Specimen No`, start = 1, end = 4)) %>% 
+  filter(WGC_4digit %in% c("4199", "4210", "4204")) %>% 
+  count(WGC_4digit, `Stat Week`, Quadrant, `Port Code`)
+```
+
+Issues for WGC 4199, 4204, and 4210, thes came up in Extraction!!!
+After checking Iris' sheet, the 100000XXXX WGC are from Wrangell and the 000003XXXX WGC are from Ketchikan!
+```{r}
+asl_summer <- asl_summer %>%
+  mutate(WGC_4digit = str_sub(string = `Dna Specimen No`, start = 1, end = 4)) %>%
+  mutate(`Dna Specimen No` = case_when(
+      WGC_4digit %in% c("4199", "4210", "4204") & `Port Code` == "KTN" ~ as.numeric(paste0(3, `Dna Specimen No`)),
+      TRUE ~ `Dna Specimen No`
+    )
+  )
+```
+
+Did we fix ASL?
+```{r}
+table(table(asl_summer$`Dna Specimen No`))
+table(nchar(asl_summer$`Dna Specimen No`))
+```
+
+Huzzah! Now to fix *LOKI*
+```{r}
+summer_samples <- KTROL19SU.gcl$attributes %>%
+  mutate(`Dna Specimen No` = as.integer(paste0(
+    str_sub(DNA_TRAY_CODE, 7, 10),
+    str_pad(DNA_TRAY_WELL_CODE, 2, "left", "0")
+  ))) %>%
+  mutate(`Dna Specimen No` = case_when(
+    DNA_TRAY_CODE %in% c("0000034199", "0000034204", "0000034210") ~ as.integer(paste0(3, `Dna Specimen No`)),
+    TRUE ~ `Dna Specimen No`
+  )) %>%
+  pull(`Dna Specimen No`)
+```
+
+Did we fix *LOKI*?
+```{r}
+table(table(summer_samples))
+table(nchar(summer_samples))
+```
+
+Cool, and all *LOKI* samples are in ASL?
+```{r}
+all(summer_samples %in% asl_summer$`Dna Specimen No`)
+```
+
+Ugh, which ones?
+```{r}
+setdiff(summer_samples, asl_summer$`Dna Specimen No`)
+```
+
+Ah right, we found this out in extraction. They got coded as 3900 in ASL.
+```{r}
+asl_summer <- asl_summer %>% 
+  mutate(`Dna Specimen No` = as.numeric(str_replace(string = as.character(`Dna Specimen No`), pattern = "3900", replacement = "3904")))
+```
+
+Cool, and all *LOKI* samples are in ASL?
+```{r}
+all(summer_samples %in% asl_summer$`Dna Specimen No`)
+```
+
+Now that we've resolved our ASL discrepancy, join with attributes to get quadrant level information.
+```{r join_summer_asl}
+# Join ASL with attributes table
+# Summer
+KTROL19SU.gcl$attributes <- KTROL19SU.gcl$attributes %>%
+  mutate(`Dna Specimen No` = as.integer(paste0(
+    str_sub(DNA_TRAY_CODE, 7, 10),
+    str_pad(DNA_TRAY_WELL_CODE, 2, "left", "0")
+  ))) %>%
+  mutate(`Dna Specimen No` = case_when(
+    DNA_TRAY_CODE %in% c("0000034199", "0000034204", "0000034210") ~ as.integer(paste0(3, `Dna Specimen No`)),
+    TRUE ~ `Dna Specimen No`
+  )) %>%
+  left_join(asl_summer, by = "Dna Specimen No")
+```
+
+How many fish per district?
+```{r summer_district_counts}
+KTROL19SU.gcl$attributes %>% 
+  count(Quadrant, Fishery) %>% 
+  spread(Fishery, n, fill = 0)
+```
+
+# Define mixture strata
+
+Summer mixtures are each Quadrant and Period by itself. Use `case_when` to creat an attribute in the attributes table for mixture.
+```{r summer_mixture_attribute}
+KTROL19SU.gcl$attributes <- KTROL19SU.gcl$attributes %>% 
+  mutate(mixname = case_when(Fishery == "Summer Ret 1" & Quadrant == 171 ~ "SummerRet1NO_2019",
+                             Fishery == "Summer Ret 1" & Quadrant == 172 ~ "SummerRet1SO_2019",
+                             Fishery == "Summer Ret 1" & Quadrant == 173 ~ "SummerRet1NI_2019",
+                             Fishery == "Summer Ret 1" & Quadrant == 174 ~ "SummerRet1SI_2019",
+                             Fishery == "Summer Ret 2" & Quadrant == 171 ~ "SummerRet2NO_2019",
+                             Fishery == "Summer Ret 2" & Quadrant == 172 ~ "SummerRet2SO_2019",
+                             Fishery == "Summer Ret 2" & Quadrant == 173 ~ "SummerRet2NI_2019",
+                             Fishery == "Summer Ret 2" & Quadrant == 174 ~ "SummerRet2SI_2019",
+                             TRUE ~ as.character(NA)))
+
+KTROL19SU.gcl$attributes %>% 
+  count(mixname)
+```
+
+Create summer mixtures.
+```{r summer_define_mixtures}
+summer_2019_mixnames <- c(paste0("SummerRet1", c("NO", "SO", "NI", "SI"), "_2019"), 
+                          paste0("SummerRet2", c("NO", "SO", "NI", "SI"), "_2019"))
+
+sapply(summer_2019_mixnames, function(mixname) {
+  ids <- setNames(object = list(AttributesToIDs.GCL(silly = "KTROL19SU", attribute = "mixname", matching = mixname)), nm = "KTROL19SU")
+  PoolCollections.GCL(collections = "KTROL19SU", loci = GAPSLoci_reordered, IDs = ids, newname = mixname)
+})
+
+sapply(summer_2019_mixnames, function(silly) {get(paste0(silly, ".gcl"))$n} )
+```
+
+Save genotypes for summer strata.
+```{r save_summer_strata_genotypes}
+if(!dir.exists("../Genotypes/strata")) {dir.create("../Genotypes/strata")}
+
+save_objects(objects = "summer_2019_mixnames", path = "../Objects/")
+save_sillys(sillyvec = summer_2019_mixnames, path = "../Genotypes/strata/")
+```
+
+# Data QA
+
+Standard data QA:
+
+  * Remove fish missing <80% genotypes
+  * Remove duplicates (>95% genotype concordance)
+
+```{r summer_QA}
+# original sample sizes
+summer_2019_sample_sizes <- tibble(silly = summer_2019_mixnames,
+                                   genotyped = sapply(summer_2019_mixnames, function(x) {
+                                     get(paste0(x, ".gcl"))$n
+                                   }))
+
+# missing
+summer_2019_missing <-
+  RemoveIndMissLoci.GCL(sillyvec = summer_2019_mixnames, proportion = 0.8)
+
+save_objects("summer_2019_missing", "../Objects/")
+
+summer_2019_sample_sizes <- summer_2019_sample_sizes %>%
+  mutate(missing = genotyped - sapply(summer_2019_mixnames, function(x) {
+    get(paste0(x, ".gcl"))$n
+  }))
+
+# duplicate
+summer_2019_duplicates <-
+  CheckDupWithinSilly.GCL(
+    sillyvec = summer_2019_mixnames,
+    loci = GAPSLoci_reordered,
+    quantile = NULL,
+    minproportion = 0.95
+  )
+
+(summer_2019_duplicates_summary <-
+    sapply(summer_2019_mixnames, function(x) {
+      summer_2019_duplicates[[x]]$report
+    }))
+
+save_objects("summer_2019_duplicates_summary", "../Objects/")
+
+summer_2019_duplciates_removed <-
+  RemoveDups.GCL(dupcheck = summer_2019_duplicates)
+
+summer_2019_sample_sizes <- summer_2019_sample_sizes %>%
+  mutate(duplicate = genotyped - missing - sapply(summer_2019_mixnames, function(x) {
+    get(paste0(x, ".gcl"))$n
+  }))
+
+# final
+summer_2019_sample_sizes <- summer_2019_sample_sizes %>%
+  mutate(final = sapply(summer_2019_mixnames, function(x) {
+    get(paste0(x, ".gcl"))$n
+  }))
+
+summer_2019_sample_sizes
+
+save_objects("summer_2019_sample_sizes", "../Objects/")
+
+write_csv(summer_2019_sample_sizes,
+          "../Tables/summer_2019_sample_sizes.csv")
+```
+
+Save post-QA genotypes
+```{r summer_post_QA}
+if(!dir.exists("../Genotypes/strata_postQA/")) {dir.create("../Genotypes/strata_postQA/")}
+save_sillys(sillyvec = summer_2019_mixnames, path = "../Genotypes/strata_postQA")
+```
+
+# Create *BAYES* files
+
+## Directory setup
+
+First need to set up *BAYES* directory structure and copy over baseline file and *BAYES* objects. This was already done when we ran TBR.
+```{r summer_BAYES_setup, results='hide'}
+# dir.create(path = "../BAYES")
+# sapply(c("Baseline", "Control", "Mixture", "Output"), function(folder) {dir.create(path = paste("../BAYES", folder, sep = "/"))} )
+# 
+# file.copy(from = "V:/Analysis/1_SEAK/Chinook/Baseline/GAPS3.0/Objects/SEAKPops357.txt", to = "../Objects")
+# file.copy(from = "V:/Analysis/1_SEAK/Chinook/Baseline/GAPS3.0/Objects/bayesfortran_357.txt", to = "../Objects")
+# file.copy(from = "V:/Analysis/1_SEAK/Chinook/Baseline/GAPS3.0/BAYES/Baseline/GAPS357pops13loci.bse", to = "../BAYES/Baseline")
+# file.copy(from = "V:/Analysis/4_Westward/Sockeye/KMA Commercial Harvest 2014-2016/Mixtures/Objects/WASSIPSockeyeSeeds.txt", to = "../Objects")
+# 
+# TBR_mixnames <- setNames(c("D108Gill_2019", "D111Gill_2019", "D111Sport_2019"), TBR_sillys)
+# save_objects("TBR_mixnames", "../Objects/")
+# load_objects("../Objects/")
+```
+
+## Create mixtures
+
+Save the fortran format and create TBR *BAYES* mixture files. This was already done when we ran TBR.
+```{r summer_BAYES_mixtures}
+# mixfortran <- CreateMixture.GCL(sillys = TBR_sillys[1], loci = GAPSLoci_reordered, IDs = NULL, mixname = TBR_mixnames[TBR_sillys[1]], dir = "../BAYES/Mixture", type = "BAYES", PT = FALSE)
+# save_objects("mixfortran", "../Objects/")
+
+sapply(summer_2019_mixnames, function(mix) {
+  CreateMixture.GCL(sillys = mix, loci = GAPSLoci_reordered, IDs = NULL, mixname = mix, dir = "../BAYES/Mixture", type = "BAYES", PT = FALSE)
+} )
+```
+
+## Create priors
+
+Use last year's 33RG estimates
+```{r summer_read_2018_estimates}
+load_objects(path = "../../SEAK18/Estimates objects/", pattern = "SummerRet1_2018_33RG_EstimatesStats.txt")
+load_objects(path = "../../SEAK18/Estimates objects/", pattern = "SummerRet2_2018_33RG_EstimatesStats.txt")
+
+(summer_2018_means <- sapply(c(SummerRet1_2018_33RG_EstimatesStats, SummerRet2_2018_33RG_EstimatesStats), function(mix) {mix[, "mean"]}))
+```
+
+Change names
+```{r summer_setup_2019_priors}
+# Fix dimnames
+colnames(summer_2018_means) <- str_replace(string = colnames(summer_2018_means), pattern = "2018", replacement = "2019")
+
+# Verify
+apply(summer_2018_means, 2, sum)
+```
+
+Now create 2019 priors.
+```{r summer_create_2019_priors}
+summer_2019_priors <- apply(summer_2018_means, 2, function(mix) {
+  Prior.GCL(groupvec = GroupVec33RG_357, groupweights = mix, minval = 0.01)
+} )
+colnames(summer_2019_priors) <- str_replace(string = colnames(summer_2019_priors), pattern = "2018", replacement = "2019")
+save_objects("summer_2019_priors", "../Objects/")
+```
+
+## Create control files
+
+Now that we have priors, just need to create *BAYES* control files.
+```{r summer_BAYES_control}
+sapply(summer_2019_mixnames, function(mix) {
+  CreateControlFile.GCL(
+    sillyvec = SEAKPops357,
+    loci = GAPSLoci_reordered,
+    mixname = mix,
+    basename = "GAPS357pops13loci",
+    suffix = "",
+    nreps = 40000,
+    nchains = 5,
+    groupvec = GroupVec33RG_357,
+    priorvec = summer_2019_priors[, mix],
+    initmat = GAPS357PopsInits,
+    dir = "../BAYES/Control",
+    seeds = WASSIPSockeyeSeeds,
+    thin = c(1, 1, 100),
+    mixfortran = mixfortran,
+    basefortran = bayesfortran_357,
+    switches = "F T F T F T F"
+  )
+} )
+```
+
+## Create output directories
+
+```{r summer_BAYES_output}
+sapply(summer_2019_mixnames, function(mix) {dir.create(paste0("../BAYES/Output/", mix))} )
+```
