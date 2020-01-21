@@ -3333,6 +3333,42 @@ spring_torun_extraction %>%
   count(SILLY, `TISSUE TYPE`)
 ```
 
+### QC Crosschecks
+
+We had one QC fish not match any project fish, but the QC fish before and after looked fine. We could run a QC Crosscheck on those in-between fish, but may not need to depending on what areas/stat weeks they are from.
+```{r}
+(barcodes <- readClipboard())
+```
+
+```{r}
+wells <- readClipboard()
+```
+
+```{r}
+(qc_xcheck <- tibble(wgc = barcodes, position = wells) %>% 
+   mutate(wgc_4_digit = str_sub(string = wgc, start = 7, end = 10),
+          wgc_2_digit_pos = str_pad(string = position, width = 2, side = "left", pad = "0")) %>% 
+   unite(col = dna_specimen_no, c("wgc_4_digit", "wgc_2_digit_pos"), sep = '')
+)
+```
+
+Where/when are these fish from?
+```{r}
+asl_spring %>% 
+  filter(`Dna Specimen No` %in% qc_xcheck$dna_specimen_no) %>% 
+  count(`Stat Area`, `Stat Week`)
+```
+
+What if we drop the 1st and last fish (known QC/project matches)
+```{r}
+asl_spring %>% 
+  filter(`Dna Specimen No` %in% qc_xcheck$dna_specimen_no[2:18]) %>% 
+  count(`Stat Area`, `Stat Week`)
+```
+
+Awesome, this is great news. Almost all of the fish are from the same Stat Area/Stat week, so even if we have QC issues, we will have ended up with fish from the same mixture. Should be good to go!
+
+
 # Sport (Origins not Origins)
 
 Tue Nov 05 11:40:27 2019
