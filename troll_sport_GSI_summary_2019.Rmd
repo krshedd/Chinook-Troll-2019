@@ -195,7 +195,7 @@ winter_2019_33RG_stratified_estimates.tdy %>%
 
 ```{r spring_harvest, message=FALSE}
 (spring_harvest <- read_csv("../Harvest Data/20191021_ft - Detailed Fish Tickets.csv") %>% 
-   filter(`Harvest Code` == 13) %>% 
+   filter(`Harvest Code` == 13 & Year == 2019) %>% 
    mutate(Month = month(`Date Fishing Ended`, label = TRUE, abbr = FALSE)) %>% 
    group_by(`Stat Area`, Month) %>% 
    summarise(Harvest = sum(`Number Of Animals (sum)`, na.rm = TRUE)) %>% 
