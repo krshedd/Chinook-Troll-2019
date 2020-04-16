@@ -1,0 +1,180 @@
+---
+title: "Stock composition of Puget Sound Chinook Salmon in the Outside Summer Troll Fisher 2009-2019"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Background
+John Carlile needs to know the stock composition of Puget Sound Chinook for outside Summer Troll 2009-2019. I presume this is for the lawsuit.
+
+# Plan
+Originally I was hoping to sumamrise data for NO and SO, but in many years SO was grouped in a mixture with NISISO, so will have to stick with just NO.
+
+```{r}
+source("~/../R/Functions.GCL.R")
+```
+
+# 2009
+
+```{r}
+# Note: Instead of using "SummerR1NISISO", "SummerR1NO", "SummerR2NISISO", "SummerR2NO" (356 baseline with 25 RGs), 
+# I used "SumRet1NISI_2009", "SumRet1NOSO_2009", "SumRet2NISI_2009", "SumRet2NOSO_2009" (357 baseline with 26 RGs, compatible with other mixtures)
+
+AllYearTroll2009_8RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec8, groupnames = GroupNames8,
+                          maindir="BAYES/Troll/Output/AllYearTroll_2009",
+                          mixvec = c("EarlyWinterNISISO", "EarlyWinterNO", "LateWinterNISISO", "LateWinterNO", "SpringNI.2009", "SpringNO.2009", "SpringSI.2009", "SumRet1NISI_2009", "SumRet1NOSO_2009", "SumRet2NISI_2009", "SumRet2NOSO_2009"),
+                          catchvec = c(2711, 2800, 3794, 15584, 7790, 16629, 8162, 4112, 80463, 1796, 31216), 
+                          newname = "StratifiedAllYearTroll2009_90percentCI_8RG", priorname = "", nchains = 5)
+```
+
+# 2010
+
+```{r}
+AllYearTroll2010_8RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec8, groupnames = GroupNames8,
+                          maindir="BAYES/Troll/Output/AllYearTroll_2010",
+                          mixvec = c("EarlyWinterNISISO.2010", "EarlyWinterNO.2010", "LateWinterNISISO.2010", "LateWinterNO.2010", "SpringNI.2010", "SpringNO.2010", "SpringSI.2010", "SummerR1NISISO.2010", "SummerR1NO.2010", "SummerR2NISISO.2010", "SummerR2NO.2010"),
+                          catchvec = c(4255, 4460, 6623, 27198, 7517, 10258, 10789, 18643, 56069, 22025, 26430), 
+                          newname = "StratifiedAllYearTroll2010_90percentCI_8RG", priorname = "", nchains = 5)
+```
+
+# 2011
+
+```{r}
+AllYearTroll2011_8RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec8, groupnames = GroupNames8,
+                          maindir="BAYES/Troll/Output/AllYearTroll_2011",
+                          mixvec = c("EWintNISISO.2011", "EWintNO.2011", "LWintNISISO.2011", "LWintNO.2011", "SpringNI.2011", "SpringNO.2011", "SpringSI.2011", "SumRet1NISISO.2011", "SumRet1NO.2011", "SumRet2NISISO.2011", "SumRet2NO.2011"),
+                          catchvec = c(4890, 7977, 9385, 28574, 8859, 17531, 12546, 40714, 80202, 13364, 16372), 
+                          newname = "StratifiedAllYearTroll2011_90percentCI_8RG", priorname = "", nchains = 5)
+```
+
+# 2012
+
+```{r}
+AllYearTroll2012_8RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec8, groupnames = GroupNames8,
+                          maindir="BAYES/Output/AllYearTroll_2012",
+                          mixvec = c("EWintNISISO.2012", "EWintNO.2012", "LWintNISISO.2012", "LWintNO.2012", "SpringNI.2012", "SpringNO.2012", "SpringSI.2012", "SumRet1NISISO.2012", "SumRet1NO.2012", "SumRet2NISISO.2012", "SumRet2NO.2012"),
+                          catchvec = c(4119, 6566, 9005, 28212, 6274, 11466, 7031, 27286, 34338, 20056, 53914), 
+                          newname = "StratifiedAllYearTroll2012_90percentCI_8RG", priorname = "", nchains = 5)
+```
+
+# 2013
+
+```{r}
+AllYearTroll2013_8RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec8, groupnames = GroupNames8,
+                          maindir="BAYES/Output/AllYearTroll_2013",
+                          mixvec = c("EWintNISISO.2013", "EWintNO.2013", "LWintNISISO.2013", "LWintNO.2013", "SpringNI.2013", "SpringNO.2013", "SpringSI.2013", "SumRet1NISISO.2013", "SumRet1NO.2013"),
+                          catchvec = c(2569, 5619, 7946, 10414, 11073, 16502, 9733, 30361, 54289), 
+                          newname = "StratifiedAllYearTroll2013_90percentCI_8RG", priorname = "", nchains = 5)
+```
+
+# 2014
+
+```{r}
+AllYearTroll2014_8RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = c(1, GroupVec8), groupnames = GroupNames8,
+                          maindir="BAYES/Output/AllYearTroll_2014",
+                          mixvec = c("EWintNISISO.2014", "EWintNO.2014", "LWintNISISO.2014", "LWintNO.2014", "SpringNI.2014", "SpringNO.2014", "SpringSI.2014", "SpringSO.2014", "SumRet1NISISO.2014", "SumRet1NO.2014", "SumRet2NISISO.2014", "SumRet2NO.2014"),
+                          catchvec = c(3602, 10669, 6974, 35289, 7702, 22393, 11215, 1238, 41323, 158108, 24365, 31288), 
+                          newname = "StratifiedAllYearTroll2014_90percentCI_8RG", priorname = "", nchains = 5)
+```
+
+# 2015
+
+```{r}
+AllYearTroll2015_8RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec8, groupnames = GroupNames8,
+                          maindir="BAYES/Output/AllYearTroll_2015",
+                          mixvec = c("EWintNISISO_2015", "EWintNO_2015", "LWintNISISO_2015", "LWintNO_2015", "SpringNI_2015", "SpringNO_2015", "SpringSI_2015", "SpringSO_2015", "SumRet1NISISO_2015", "SumRet1NO_2015"),
+                          catchvec = c(3297, 20841, 5417, 21113, 12780, 22464, 17769, 711, 40157, 124454), 
+                          newname = "StratifiedAllYearTroll2015_90percentCI_8RG", priorname = "", nchains = 5)
+```
+
+# 2016
+
+```{r}
+AllYearTroll2016_8RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec33RG_to8RG, groupnames = GroupNames8,
+                          maindir="BAYES/Output/33RG/AllYearTroll_2016",
+                          mixvec = c("EWintNISISO_2016", "EWintNO_2016", "LWintNISISO_2016", "LWintNO_2016", 
+                                     "SpringNI_2016", "SpringNO_2016", "SpringSI_2016", "SpringSO_2016", 
+                                     "Summer1NI_2016", "Summer1NO_2016", "Summer1SI_2016", "Summer1SO_2016", 
+                                     "Summer2NI_2016", "Summer2NO_2016", "Summer2SI_2016", "Summer2SO_2016"),
+                          catchvec = c(4216, 25147, 5248, 17680,
+                                       9270, 17012, 15160, 1031,
+                                       3805, 80323, 3618, 18888,
+                                       2147, 56208, 1774, 14111), 
+                          newname = "StratifiedAllYearTroll2016_90percentCI_8RG", priorname = "", nchains = 5)
+```
+
+# 2017
+
+```{r}
+AllYearTroll2017_8RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec8, groupnames = GroupNames8, maindir = "BAYES/Output", 
+                          mixvec = c(EWint_Mixtures,LWint_Mixtures,SpringRet1_Mixtures,SpringRet2_Mixtures, SummerRet1_Mixtures), 
+                          catchvec = c(4989, 1599, 22509, 14782, 807, 2241, 1700, 283, 1471, 8507, 1819, 482, 10020, 40721, 4037, 9551),  newname = "Stratified_AllTroll_2017_90percentCI_8RG", nchains = 5, xlxs = TRUE)
+```
+
+# 2018
+
+```{r}
+AllYearTroll2018_8RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec33RG_to8RG, groupnames = GroupNames8, maindir = "../BAYES/Output/", mixvec = c(winter_2018_mixnames, spring_2018_mixnames[c(3,6,4,7,8,1,8,5,9,5,10,2)], summer_2018_mixnames[c(2,4,1,3,6,8,5,7)]), 
+                          catchvec = c(4501, 86, 1262, 1549, 1664, 362, 903, 1640, 289, 2306, 424, 281, 498, 236, 67, 497, 1230, 52, 892, 190, 38087, 14219, 2797, 3993, 16907, 8649, 454, 1736), newname = "AllYearAllQuad", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
+```
+
+# 2019
+
+```{r}
+AllYearTroll2019_8RG_StratifiedEstimatesStats <- 
+  StratifiedEstimator.GCL(groupvec = GroupVec33RG_to8RG, groupnames = GroupNames8, maindir = "../BAYES/Output/", mixvec = c(winter_2019_mixnames, spring_2019_mixnames[c(6, 7, 1, 8, 1, 8, 9, 2, 10, 10, 3, 11, 4, 12, 5, 13)], summer_2019_mixnames), 
+                          catchvec = c(1441, 68, 1878, 2520, 3030, 543, 908, 1978, 1761, 583, 670, 275, 108, 43, 244, 398, 175, 76, 571, 2381, 268, 2075, 482, 267, 41978, 11215, 2233, 2956, 14334, 6827, 2918, 1380), newname = "AllYearAllQuad", ext = "RGN", nchains = 5, xlxs = FALSE, PosteriorOutput = FALSE)
+```
+
+```{r}
+GroupVec33RG_to26RG <- dget("V:/Analysis/1_SEAK/Chinook/Mixture/SEAK19/Objects/GroupVec33RG_to26RG.txt")
+GroupNames26 <- dget("V:/Analysis/1_SEAK/Chinook/Mixture/SEAK19/Objects/GroupNames26.txt")
+```
+```{r}
+summer_NO_2018 <-   CustomCombineBAYESOutput.GCL(
+    groupvec = GroupVec33RG_to26RG,
+    groupnames = GroupNames26,
+    maindir = "V:/Analysis/1_SEAK/Chinook/Mixture/SEAK18/BAYES/Output",
+    mixvec = c("SummerRet1NO_2018", "SummerRet2NO_2018"),
+    prior = "",
+    ext = "RGN",
+    nchains = 5,
+    burn = 0.5,
+    alpha = 0.1,
+    PosteriorOutput = FALSE
+  )
+```
+
+```{r}
+write.table(summer_NO_2019$SummerRet2NO_2019[, 1:5], file = 'clipboard')
+```
+
+
+```{r}
+summer_NO_2019 <-   CustomCombineBAYESOutput.GCL(
+    groupvec = GroupVec33RG_to26RG,
+    groupnames = GroupNames26,
+    maindir = "V:/Analysis/1_SEAK/Chinook/Mixture/SEAK19/BAYES/Output",
+    mixvec = c("SummerRet1NO_2019", "SummerRet2NO_2019"),
+    prior = "",
+    ext = "RGN",
+    nchains = 5,
+    burn = 0.5,
+    alpha = 0.1,
+    PosteriorOutput = FALSE
+  )
+```
