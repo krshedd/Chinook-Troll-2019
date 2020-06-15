@@ -1,0 +1,39 @@
+---
+title: "Troll Harvest of NSEAK (Chilkat) 2017-2019"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, message=FALSE, results='hide'}
+knitr::opts_chunk$set(echo = FALSE, fig.width = 10)
+source("~/../R/Functions.GCL.R")
+library(tidyverse)
+library(lubridate)
+load_objects("../Objects/")
+load_objects("../Estimates objects/")
+load_objects("../../SEAK18/Estimates objects")
+load_objects("../../SEAK17/Estimates objects")
+```
+# Objective
+Brian Elliot wanted to look in to the troll harvest of Chilkat (NSEAK) for 2017-2019.
+
+## 2019
+```{r}
+AY2019_33RG <- list(
+  "Early_Winter_AY2019" = EWint_2019_33RG_StratifiedEstimatesStats,
+  "Late_Winter_AY2019" = LWint_2019_33RG_StratifiedEstimatesStats,
+  "Spring_AY2019" = Spring_2019_33RG_StratifiedEstimatesStats,
+  "Summer_Ret1_AY2019" = SummerRet1_2019_33RG_StratifiedEstimatesStats,
+  "Summer_Ret2_AY2019" = SummerRet2_2019_33RG_StratifiedEstimatesStats
+) %>% 
+  dplyr::bind_rows(.id = "mixture")
+```
+
+```{r}
+AY2019_33RG
+```
+
