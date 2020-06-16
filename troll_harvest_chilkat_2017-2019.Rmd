@@ -9,19 +9,15 @@ editor_options:
 ---
 
 ```{r setup, message=FALSE, results='hide'}
-knitr::opts_chunk$set(echo = FALSE, fig.width = 10)
+knitr::opts_chunk$set(fig.width = 10)
 source("~/../R/Functions.GCL.R")
 library(tidyverse)
 library(lubridate)
-load_objects("../Objects/")
-load_objects("../Estimates objects/")
-load_objects("../../SEAK18/Estimates objects")
-load_objects("../../SEAK17/Estimates objects")
+load_objects("~/../Desktop/Local_SEAK_Troll_Chilkat/")
 ```
 # Objective
 Brian Elliot wanted to look in to the troll harvest of Chilkat (NSEAK) for 2017-2019.
 
-## 2019
 ```{r}
 AY2019_33RG <- list(
   "Early_Winter_AY2019" = EWint_2019_33RG_StratifiedEstimatesStats,
@@ -29,11 +25,33 @@ AY2019_33RG <- list(
   "Spring_AY2019" = Spring_2019_33RG_StratifiedEstimatesStats,
   "Summer_Ret1_AY2019" = SummerRet1_2019_33RG_StratifiedEstimatesStats,
   "Summer_Ret2_AY2019" = SummerRet2_2019_33RG_StratifiedEstimatesStats
-) %>% 
-  dplyr::bind_rows(.id = "mixture")
+)
+
+AY2018_33RG <- list(
+  "Early_Winter_AY2018" = EWint_2018_33RG_StratifiedEstimatesStats,
+  "Late_Winter_AY2018" = LWint_2018_33RG_StratifiedEstimatesStats,
+  "Spring_AY2018" = Spring_2018_33RG_StratifiedEstimatesStats,
+  "Summer_Ret1_AY2018" = SummerRet1_2018_33RG_StratifiedEstimatesStats,
+  "Summer_Ret2_AY2018" = SummerRet2_2018_33RG_StratifiedEstimatesStats
+)
+
+names(Troll2017_33RG_StratifiedEstimates)
 ```
 
 ```{r}
-AY2019_33RG
+names(Troll2017_33RG_StratifiedEstimates) <- c("Early_Winter_AY2017", "Late_Winter_AY2017", "Spring_AY2017", "Summer_Ret1_AY2017")
+```
+
+
+```{r}
+sapply(c(Troll2017_33RG_StratifiedEstimates, AY2018_33RG, AY2019_33RG), function(mix) {
+  as_tibble(mix, rownames = "group")
+}, simplify = FALSE) %>%
+  bind_rows(.id = "fishery") %>%
+  separate(col = "fishery", into = c("fishery", "year"), sep = "_AY") %>% 
+  filter(group == "NSEAK") %>% 
+  mutate(across(is.numeric, round, 3)) %>% 
+  select(-GR) %>% 
+  write_csv("~/../Desktop/Local_SEAK_Troll_Chilkat/troll_AY17-19_NSEAK_summaries.csv")
 ```
 
