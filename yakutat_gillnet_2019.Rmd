@@ -1,0 +1,43 @@
+---
+title: "Chinook Gillnet D183 2019"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Goals & Objectives
+
+
+
+## Setup
+
+Load *GCL-R-Functions* and all necessary packages.
+```{r setup, message=FALSE, results='hide'}
+source("~/../R/Functions.GCL.R")
+library(tidyverse)
+library(lubridate)
+
+.username <- "krshedd"
+.password <- ""
+```
+
+Read in those objects and `LocusControl`
+```{r load_objects}
+load_objects("../Objects/")
+```
+
+# Winter troll: import mixture genotypes
+
+Read in genotypes from *LOKI* as `.gcl` objects. Save in directory.
+```{r winter_loki}
+my_silly <- "KGILL19D83"
+LOKI2R_GAPS.GCL(sillyvec = my_silly, username = .username, password = .password)
+rm(.username, .password)
+
+sapply(my_silly, function(silly) {get(paste0(silly, ".gcl"))$n} )
+
+save_sillys(sillyvec = my_silly, path = "../Genotypes/original")
+```
