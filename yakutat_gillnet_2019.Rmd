@@ -29,15 +29,152 @@ Read in those objects and `LocusControl`
 load_objects("../Objects/")
 ```
 
-# Winter troll: import mixture genotypes
+# Gillnet D183: import mixture genotypes
 
 Read in genotypes from *LOKI* as `.gcl` objects. Save in directory.
 ```{r winter_loki}
-my_silly <- "KGILL19D83"
-LOKI2R_GAPS.GCL(sillyvec = my_silly, username = .username, password = .password)
+yakutat_2019_mixnames <- "KGILL19D83"
+LOKI2R_GAPS.GCL(sillyvec = yakutat_2019_mixnames, username = .username, password = .password)
 rm(.username, .password)
 
-sapply(my_silly, function(silly) {get(paste0(silly, ".gcl"))$n} )
+sapply(yakutat_2019_mixnames, function(silly) {get(paste0(silly, ".gcl"))$n} )
 
-save_sillys(sillyvec = my_silly, path = "../Genotypes/original")
+save_sillys(sillyvec = yakutat_2019_mixnames, path = "../Genotypes/original")
 ```
+
+# Data QA
+
+Standard data QA:
+
+  * Remove fish missing <80% genotypes
+  * Remove duplicates (>95% genotype concordance)
+
+```{r yakutat_QA}
+yakutat_2019_mixnames <- "KGILL19D83"
+
+# original sample sizes
+yakutat_2019_sample_sizes <- tibble(silly = yakutat_2019_mixnames,
+                                   genotyped = sapply(yakutat_2019_mixnames, function(x) {
+                                     get(paste0(x, ".gcl"))$n
+                                   }))
+
+# missing
+yakutat_2019_missing <-
+  RemoveIndMissLoci.GCL(sillyvec = yakutat_2019_mixnames, proportion = 0.8)
+
+save_objects("yakutat_2019_missing", "../Objects/")
+
+yakutat_2019_sample_sizes <- yakutat_2019_sample_sizes %>%
+  mutate(missing = genotyped - sapply(yakutat_2019_mixnames, function(x) {
+    get(paste0(x, ".gcl"))$n
+  }))
+
+# duplicate
+yakutat_2019_duplicates <-
+  CheckDupWithinSilly.GCL(
+    sillyvec = yakutat_2019_mixnames,
+    loci = GAPSLoci_reordered,
+    quantile = NULL,
+    minproportion = 0.95
+  )
+
+(yakutat_2019_duplicates_summary <-
+    sapply(yakutat_2019_mixnames, function(x) {
+      yakutat_2019_duplicates[[x]]$report
+    }))
+
+save_objects("yakutat_2019_duplicates_summary", "../Objects/")
+
+yakutat_2019_duplciates_removed <-
+  RemoveDups.GCL(dupcheck = yakutat_2019_duplicates)
+
+yakutat_2019_sample_sizes <- yakutat_2019_sample_sizes %>%
+  mutate(duplicate = genotyped - missing - sapply(yakutat_2019_mixnames, function(x) {
+    get(paste0(x, ".gcl"))$n
+  }))
+
+# final
+yakutat_2019_sample_sizes <- yakutat_2019_sample_sizes %>%
+  mutate(final = sapply(yakutat_2019_mixnames, function(x) {
+    get(paste0(x, ".gcl"))$n
+  }))
+
+yakutat_2019_sample_sizes
+
+save_objects("yakutat_2019_sample_sizes", "../Objects/")
+
+write_csv(yakutat_2019_sample_sizes,
+          "../Tables/yakutat_2019_sample_sizes.csv")
+```
+
+# Create *BAYES* files
+
+## Directory setup
+
+First need to set up *BAYES* directory structure and copy over baseline file and *BAYES* objects. This was already done when we ran TBR.
+
+
+## Create mixtures
+
+Save the fortran format and create TBR *BAYES* mixture files. This was already done when we ran TBR.
+```{r spring_BAYES_mixtures}
+# mixfortran <- CreateMixture.GCL(sillys = TBR_sillys[1], loci = GAPSLoci_reordered, IDs = NULL, mixname = TBR_mixnames[TBR_sillys[1]], dir = "../BAYES/Mixture", type = "BAYES", PT = FALSE)
+# save_objects("mixfortran", "../Objects/")
+
+CreateMixture.GCL(
+  sillys = yakutat_2019_mixnames,
+  loci = GAPSLoci_reordered,
+  IDs = NULL,
+  mixname = yakutat_2019_mixnames,
+  dir = "../BAYES/Mixture",
+  type = "BAYES",
+  PT = FALSE
+)
+```
+
+## Create control files
+
+Now that we have priors, just need to create *BAYES* control files.
+```{r spring_BAYES_control}
+CreateControlFile.GCL(
+  sillyvec = SEAKPops357,
+  loci = GAPSLoci_reordered,
+  mixname = yakutat_2019_mixnames,
+  basename = "GAPS357pops13loci",
+  suffix = "",
+  nreps = 40000,
+  nchains = 5,
+  groupvec = GroupVec33RG_357,
+  priorvec = flat_prior,
+  initmat = GAPS357PopsInits,
+  dir = "../BAYES/Control",
+  seeds = WASSIPSockeyeSeeds,
+  thin = c(1, 1, 100),
+  mixfortran = mixfortran,
+  basefortran = bayesfortran_357,
+  switches = "F T F T F T F"
+)
+```
+
+# Summarize *BAYES* results
+
+Summarize results for both the full 33 reporting groups.
+
+## 33 reporting groups
+
+Create standard summary and save.
+```{r spring_BAYES_summarise_33RG}
+# full 33 reporting groups
+Yakutat_2019_33RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = 1:33, groupnames = GroupNames33, maindir = "../BAYES/Output", mixvec = yakutat_2019_mixnames,
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+# dir.create("../Estimates objects")
+save_objects(c("Yakutat_2019_33RG_EstimatesStats"), "../Estimates objects")
+```
+
+```{r}
+as_tibble(Yakutat_2019_33RG_EstimatesStats$KGILL19D83, rownames = "groups") %>% 
+  arrange(desc(mean))
+```
+
