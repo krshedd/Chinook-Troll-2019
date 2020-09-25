@@ -178,3 +178,24 @@ as_tibble(Yakutat_2019_33RG_EstimatesStats$KGILL19D83, rownames = "groups") %>%
   arrange(desc(mean))
 ```
 
+
+Make new groupvec for just Alsek, Situk, Alaska, Canda, US South
+```{r}
+cbind(GroupNames33, GroupNames4Pub[GroupVec33RG_to4RG], GroupVec33RG_to4RG)
+```
+
+
+```{r}
+GroupNames6_Yakutat <- c("Situk", "Alsek", "TBR", "Alaska", "Canada", "US South")
+GroupVec33RG_to6RG_Yakutat <- c(1, 2, 4, 4, 3, 4, 3, 4,rep(5, 12), rep(6, 13))
+
+Yakutat_2019_6RG_EstimatesStats <- 
+  CustomCombineBAYESOutput.GCL(groupvec = GroupVec33RG_to6RG_Yakutat, groupnames = GroupNames6_Yakutat, maindir = "../BAYES/Output", mixvec = "KGILL19D83",
+                               prior = "", ext = "RGN", nchains = 5, burn = 0.5, alpha = 0.1, PosteriorOutput = FALSE)
+
+```
+
+```{r}
+Yakutat_2019_6RG_EstimatesStats
+```
+
